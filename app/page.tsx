@@ -65,18 +65,46 @@ interface PhotoUpload {
 export default function CubLakeCottage() {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [tasks, setTasks] = useState<Task[]>(initialTasks)
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    if (typeof window === 'undefined') return initialTasks
+    try {
+      const saved = localStorage.getItem('cubLakeTasks')
+      return saved ? JSON.parse(saved) : initialTasks
+    } catch {
+      return initialTasks
+    }
+  })
   const [showAddTask, setShowAddTask] = useState(false)
-  const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026' })
+  const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026', notes: '' })
   
   // Photo states
-  const [propertyPhotos, setPropertyPhotos] = useState<Record<string, PhotoUpload | null>>({
-    front: null, lake: null, dock: null, living: null, kitchen: null
+  const [propertyPhotos, setPropertyPhotos] = useState<Record<string, PhotoUpload | null>>(() => {
+    if (typeof window === 'undefined') return { front: null, lake: null, dock: null, living: null, kitchen: null }
+    try {
+      const saved = localStorage.getItem('cubLakePropertyPhotos')
+      return saved ? JSON.parse(saved) : { front: null, lake: null, dock: null, living: null, kitchen: null }
+    } catch {
+      return { front: null, lake: null, dock: null, living: null, kitchen: null }
+    }
   })
-  const [inspirationPhotos, setInspirationPhotos] = useState<Record<string, PhotoUpload | null>>({
-    hottub: null, decor: null, firepit: null, dock: null
+  const [inspirationPhotos, setInspirationPhotos] = useState<Record<string, PhotoUpload | null>>(() => {
+    if (typeof window === 'undefined') return { hottub: null, decor: null, firepit: null, dock: null }
+    try {
+      const saved = localStorage.getItem('cubLakeInspirationPhotos')
+      return saved ? JSON.parse(saved) : { hottub: null, decor: null, firepit: null, dock: null }
+    } catch {
+      return { hottub: null, decor: null, firepit: null, dock: null }
+    }
   })
-  const [visionPhotos, setVisionPhotos] = useState<PhotoUpload[]>([])
+  const [visionPhotos, setVisionPhotos] = useState<PhotoUpload[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem('cubLakeVisionPhotos')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   
   // File input refs
   const propertyInputRef = useRef<HTMLInputElement>(null)
@@ -93,6 +121,30 @@ export default function CubLakeCottage() {
     setMounted(true)
   }, [])
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cubLakeTasks', JSON.stringify(tasks))
+    }
+  }, [tasks])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cubLakePropertyPhotos', JSON.stringify(propertyPhotos))
+    }
+  }, [propertyPhotos])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cubLakeInspirationPhotos', JSON.stringify(inspirationPhotos))
+    }
+  }, [inspirationPhotos])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('cubLakeVisionPhotos', JSON.stringify(visionPhotos))
+    }
+  }, [visionPhotos])
+
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId)
     if (element) {
@@ -101,8 +153,18 @@ export default function CubLakeCottage() {
   }
 
   const toggleTask = (taskId: string) => {
-    setTasks(prev => prev.map(task => 
+    setTasks(prev => prev.map(task =>
       task.id === taskId ? { ...task, completed: !task.completed } : task
+    ))
+  }
+
+  const deleteTask = (taskId: string) => {
+    setTasks(prev => prev.filter(t => t.id !== taskId))
+  }
+
+  const updateTaskNotes = (taskId: string, notes: string) => {
+    setTasks(prev => prev.map(task =>
+      task.id === taskId ? { ...task, notes: notes || undefined } : task
     ))
   }
 
@@ -115,28 +177,33 @@ export default function CubLakeCottage() {
       completed: false,
       dueDate: newTask.dueDate || 'TBD',
       month: newTask.month,
+      notes: newTask.notes || undefined,
     }
     setTasks(prev => [...prev, task])
-    setNewTask({ title: '', category: 'personal', dueDate: '', month: 'June 2026' })
+    setNewTask({ title: '', category: 'personal', dueDate: '', month: 'June 2026', notes: '' })
     setShowAddTask(false)
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !activeUploadTarget) return
-    
-    const url = URL.createObjectURL(file)
-    const upload: PhotoUpload = { id: Date.now().toString(), url, name: file.name }
-    
-    if (activeUploadTarget.type === 'property' && activeUploadTarget.id) {
-      setPropertyPhotos(prev => ({ ...prev, [activeUploadTarget.id!]: upload }))
-    } else if (activeUploadTarget.type === 'inspiration' && activeUploadTarget.id) {
-      setInspirationPhotos(prev => ({ ...prev, [activeUploadTarget.id!]: upload }))
-    } else if (activeUploadTarget.type === 'vision') {
-      setVisionPhotos(prev => [...prev, upload])
+
+    const target = activeUploadTarget
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string
+      const upload: PhotoUpload = { id: Date.now().toString(), url: dataUrl, name: file.name }
+
+      if (target.type === 'property' && target.id) {
+        setPropertyPhotos(prev => ({ ...prev, [target.id!]: upload }))
+      } else if (target.type === 'inspiration' && target.id) {
+        setInspirationPhotos(prev => ({ ...prev, [target.id!]: upload }))
+      } else if (target.type === 'vision') {
+        setVisionPhotos(prev => [...prev, upload])
+      }
+      setActiveUploadTarget(null)
     }
-    
-    setActiveUploadTarget(null)
+    reader.readAsDataURL(file)
     e.target.value = ''
   }
 
@@ -466,13 +533,14 @@ export default function CubLakeCottage() {
               </div>
               <h2 className="font-serif text-3xl md:text-4xl font-medium">Project Timeline</h2>
             </div>
-            <button 
+            <button
               onClick={() => setShowAddTask(true)}
-              className="hidden md:inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg" 
+              className="inline-flex items-center gap-2 px-4 py-2.5 md:px-5 md:py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg"
               style={{ backgroundColor: '#3d5a3c', color: 'white' }}
             >
               <Plus className="w-4 h-4" />
-              Add Task
+              <span className="hidden sm:inline">Add Task</span>
+              <span className="sm:hidden">Add</span>
             </button>
           </div>
 
@@ -494,7 +562,15 @@ export default function CubLakeCottage() {
                 </div>
                 <div className="space-y-3">
                   {monthTasks.map((task, i) => (
-                    <TaskCard key={task.id} task={task} index={i} groupIndex={groupIndex} />
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      index={i}
+                      groupIndex={groupIndex}
+                      onToggle={() => toggleTask(task.id)}
+                      onDelete={() => deleteTask(task.id)}
+                      onUpdateNotes={(notes) => updateTaskNotes(task.id, notes)}
+                    />
                   ))}
                 </div>
               </div>
@@ -552,7 +628,11 @@ export default function CubLakeCottage() {
                     <p className="font-semibold text-lg mb-2">Add your vision board</p>
                     <p className="text-sm text-muted-foreground">Upload inspiration photos and mockups</p>
                   </div>
-                  <button className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg" style={{ backgroundColor: '#3d5a3c', color: 'white' }}>
+                  <button
+                    onClick={() => triggerUpload('vision')}
+                    className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg"
+                    style={{ backgroundColor: '#3d5a3c', color: 'white' }}
+                  >
                     Upload Photos
                   </button>
                 </div>
@@ -600,11 +680,110 @@ export default function CubLakeCottage() {
           </div>
         </div>
       </footer>
+
+      {/* Add Task Modal */}
+      {showAddTask && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setShowAddTask(false)}
+        >
+          <div
+            className="bg-card rounded-2xl p-6 w-full max-w-md shadow-2xl border border-border"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="font-serif text-xl font-medium mb-5">Add New Task</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Task</label>
+                <input
+                  type="text"
+                  value={newTask.title}
+                  onChange={e => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && addTask()}
+                  placeholder="What needs to be done?"
+                  autoFocus
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Category</label>
+                  <select
+                    value={newTask.category}
+                    onChange={e => setNewTask(prev => ({ ...prev, category: e.target.value as Task['category'] }))}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    <option value="personal">Personal</option>
+                    <option value="rental">Rental Prep</option>
+                    <option value="milestone">Milestone</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Due Date</label>
+                  <input
+                    type="text"
+                    value={newTask.dueDate}
+                    onChange={e => setNewTask(prev => ({ ...prev, dueDate: e.target.value }))}
+                    placeholder="e.g. Jul 15"
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Month</label>
+                <select
+                  value={newTask.month}
+                  onChange={e => setNewTask(prev => ({ ...prev, month: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  {MONTHS_ORDER.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Notes (optional)</label>
+                <textarea
+                  value={newTask.notes}
+                  onChange={e => setNewTask(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Vendor names, decisions, context..."
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowAddTask(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-secondary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={addTask}
+                disabled={!newTask.title.trim()}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-all hover:opacity-90"
+                style={{ backgroundColor: '#3d5a3c' }}
+              >
+                Add Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
 
-function TaskCard({ task, index, groupIndex }: { task: Task; index: number; groupIndex: number }) {
+function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }: {
+  task: Task
+  index: number
+  groupIndex: number
+  onToggle: () => void
+  onDelete: () => void
+  onUpdateNotes: (notes: string) => void
+}) {
+  const [showNotes, setShowNotes] = useState(false)
+  const [notesValue, setNotesValue] = useState(task.notes || '')
+
   const categoryStyles = {
     personal: { bg: 'rgba(61, 90, 60, 0.08)', text: '#3d5a3c', border: 'rgba(61, 90, 60, 0.2)', label: 'Personal' },
     rental: { bg: 'rgba(70, 130, 180, 0.08)', text: '#4682b4', border: 'rgba(70, 130, 180, 0.2)', label: 'Rental Prep' },
@@ -614,44 +793,79 @@ function TaskCard({ task, index, groupIndex }: { task: Task; index: number; grou
   const colors = categoryStyles[task.category]
 
   return (
-    <div 
-      className={`group flex items-center gap-4 p-5 rounded-2xl bg-background border-2 border-border hover:border-primary/30 transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+    <div
+      className={`group p-5 rounded-2xl bg-background border-2 border-border hover:border-primary/30 transition-all hover:shadow-lg hover:-translate-y-0.5 ${
         task.completed ? 'opacity-60' : ''
       }`}
       style={{ animationDelay: `${(groupIndex * 3 + index) * 50}ms` }}
     >
-      <button className="flex-shrink-0 transition-transform hover:scale-110">
-        {task.completed ? (
-          <div className="relative">
-            <CheckCircle2 className="w-7 h-7" style={{ color: '#3d5a3c' }} />
-            <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ backgroundColor: '#3d5a3c' }} />
-          </div>
-        ) : (
-          <Circle className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
-        )}
-      </button>
-      <div className="flex-grow min-w-0">
-        <p className={`font-medium text-base ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
-          {task.title}
-        </p>
-        <div className="flex items-center gap-2 mt-2">
-          <span 
-            className="text-xs px-3 py-1 rounded-full border font-medium"
-            style={{ backgroundColor: colors.bg, color: colors.text, borderColor: colors.border }}
-          >
-            {colors.label}
-          </span>
-          {task.category === 'milestone' && (
-            <Star className="w-3.5 h-3.5" style={{ color: '#d4a574' }} fill="currentColor" />
+      <div className="flex items-center gap-4">
+        <button className="flex-shrink-0 transition-transform hover:scale-110" onClick={onToggle}>
+          {task.completed ? (
+            <div className="relative">
+              <CheckCircle2 className="w-7 h-7" style={{ color: '#3d5a3c' }} />
+              <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ backgroundColor: '#3d5a3c' }} />
+            </div>
+          ) : (
+            <Circle className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
           )}
+        </button>
+        <div className="flex-grow min-w-0">
+          <p className={`font-medium text-base ${task.completed ? 'line-through text-muted-foreground' : ''}`}>
+            {task.title}
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <span
+              className="text-xs px-3 py-1 rounded-full border font-medium"
+              style={{ backgroundColor: colors.bg, color: colors.text, borderColor: colors.border }}
+            >
+              {colors.label}
+            </span>
+            {task.category === 'milestone' && (
+              <Star className="w-3.5 h-3.5" style={{ color: '#d4a574' }} fill="currentColor" />
+            )}
+          </div>
+        </div>
+        <div className="flex-shrink-0 text-right">
+          <span className={`text-sm font-semibold ${task.completed ? 'text-muted-foreground' : ''}`} style={{ color: task.completed ? undefined : '#3d5a3c' }}>
+            {task.dueDate}
+          </span>
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowNotes(s => !s) }}
+            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
+            title={showNotes ? 'Hide notes' : 'Add / view notes'}
+          >
+            <MessageSquare className="w-4 h-4" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+            title="Delete task"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-all" />
         </div>
       </div>
-      <div className="flex-shrink-0 text-right">
-        <span className={`text-sm font-semibold ${task.completed ? 'text-muted-foreground' : ''}`} style={{ color: task.completed ? undefined : '#3d5a3c' }}>
-          {task.dueDate}
-        </span>
-      </div>
-      <ChevronRight className="w-5 h-5 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+      {/* Notes preview — visible when panel is closed and notes exist */}
+      {task.notes && !showNotes && (
+        <p className="text-xs text-muted-foreground truncate mt-2 pl-8">{task.notes}</p>
+      )}
+      {/* Notes edit panel */}
+      {showNotes && (
+        <div className="mt-3 pt-3 border-t border-border" onClick={e => e.stopPropagation()}>
+          <textarea
+            value={notesValue}
+            onChange={e => setNotesValue(e.target.value)}
+            onBlur={() => onUpdateNotes(notesValue)}
+            placeholder="Add notes, vendor names, decisions made..."
+            rows={2}
+            className="w-full text-sm text-muted-foreground bg-secondary/50 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-primary/30 border-0"
+          />
+        </div>
+      )}
     </div>
   )
 }
