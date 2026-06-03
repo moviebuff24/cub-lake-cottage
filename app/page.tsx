@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { ref, onValue, set } from 'firebase/database'
+import { db } from '@/lib/firebase'
 import {
   Home,
   Waves,
@@ -65,15 +67,9 @@ interface PhotoUpload {
 export default function CubLakeCottage() {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    if (typeof window === 'undefined') return initialTasks
-    try {
-      const saved = localStorage.getItem('cubLakeTasks')
-      return saved ? JSON.parse(saved) : initialTasks
-    } catch {
-      return initialTasks
-    }
-  })
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [tasksLoaded, setTasksLoaded] = useState(false)
+  const isFirebaseUpdate = useRef(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026', notes: '' })
   
@@ -121,11 +117,27 @@ export default function CubLakeCottage() {
     setMounted(true)
   }, [])
 
+  // Subscribe to Firebase tasks — syncs across all devices in real time
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cubLakeTasks', JSON.stringify(tasks))
+    const tasksRef = ref(db, 'tasks')
+    const unsubscribe = onValue(tasksRef, (snapshot) => {
+      const data = snapshot.val()
+      isFirebaseUpdate.current = true
+      setTasks(data ?? initialTasks)
+      setTasksLoaded(true)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  // Write tasks to Firebase only when changed locally (not from Firebase)
+  useEffect(() => {
+    if (!tasksLoaded) return
+    if (isFirebaseUpdate.current) {
+      isFirebaseUpdate.current = false
+      return
     }
-  }, [tasks])
+    set(ref(db, 'tasks'), tasks)
+  }, [tasks, tasksLoaded])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
