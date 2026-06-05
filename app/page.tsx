@@ -31,6 +31,7 @@ import {
   Upload,
   MessageSquare,
   GripVertical,
+  Menu,
 } from 'lucide-react'
 import { type Task, initialTasks, MONTHS_ORDER } from '@/lib/tasks'
 
@@ -80,6 +81,7 @@ export default function CubLakeCottage() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026', notes: '' })
   const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({})
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const openMonthsInitialized = useRef(false)
   
   // Scratchpad state — shared notes, synced via Firebase RTDB
@@ -503,6 +505,51 @@ export default function CubLakeCottage() {
       <input type="file" ref={inspirationInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
       <input type="file" ref={visionInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
       
+      {/* Mobile navigation menu */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          {/* Panel slides in from top */}
+          <div className="absolute top-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md shadow-2xl px-6 pt-6 pb-8">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-white/10">
+                  <TreePine className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-white text-sm font-medium tracking-widest uppercase opacity-80">Est. 2026</span>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2.5 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors"
+                aria-label="Close menu"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <nav className="flex flex-col gap-1">
+              {[
+                { label: 'The Property', id: 'property' },
+                { label: 'Progress', id: 'progress' },
+                { label: 'Notes', id: 'notes' },
+                { label: 'Vision', id: 'vision' },
+              ].map(({ label, id }) => (
+                <button
+                  key={id}
+                  onClick={() => { scrollToSection(id); setMobileMenuOpen(false) }}
+                  className="text-left px-4 py-4 rounded-xl text-white text-lg font-medium hover:bg-white/10 transition-colors"
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
+      )}
+
       {/* Upload progress banner */}
       {uploading && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-full bg-foreground text-background text-sm font-medium shadow-xl flex items-center gap-2">
@@ -551,6 +598,16 @@ export default function CubLakeCottage() {
               </div>
               <span className="text-sm font-medium tracking-widest uppercase opacity-80">Est. 2026</span>
             </div>
+            {/* Hamburger — mobile only */}
+            <button
+              className="md:hidden p-2.5 rounded-xl bg-white/10 backdrop-blur-sm hover:bg-white/20 transition-colors"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-8 text-sm">
               <button onClick={() => scrollToSection('property')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">The Property</button>
               <button onClick={() => scrollToSection('progress')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Progress</button>
@@ -896,21 +953,30 @@ export default function CubLakeCottage() {
                       style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}
                     />
                   </button>
-                  {isOpen && (
-                    <div className="space-y-3">
-                      {sortedTasks.map((task, i) => (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          index={i}
-                          groupIndex={groupIndex}
-                          onToggle={() => toggleTask(task.id)}
-                          onDelete={() => deleteTask(task.id)}
-                          onUpdateNotes={(notes) => updateTaskNotes(task.id, notes)}
-                        />
-                      ))}
+                  {/* CSS grid trick — expands downward, never causes upward layout shift */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateRows: isOpen ? '1fr' : '0fr',
+                      transition: 'grid-template-rows 250ms ease',
+                    }}
+                  >
+                    <div style={{ overflow: 'hidden' }}>
+                      <div className="space-y-3 pb-1">
+                        {sortedTasks.map((task, i) => (
+                          <TaskCard
+                            key={task.id}
+                            task={task}
+                            index={i}
+                            groupIndex={groupIndex}
+                            onToggle={() => toggleTask(task.id)}
+                            onDelete={() => deleteTask(task.id)}
+                            onUpdateNotes={(notes) => updateTaskNotes(task.id, notes)}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
               )
             })}
