@@ -82,6 +82,7 @@ export default function CubLakeCottage() {
   const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026', notes: '' })
   const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({})
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [accordionTransitionsReady, setAccordionTransitionsReady] = useState(false)
   const openMonthsInitialized = useRef(false)
   
   // Scratchpad state — shared notes, synced via Firebase RTDB
@@ -118,6 +119,16 @@ export default function CubLakeCottage() {
 
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  // Wait for two animation frames before enabling accordion transitions so the
+  // browser has committed the initial 0fr state — prevents the first-click snap.
+  useEffect(() => {
+    const raf1 = requestAnimationFrame(() => {
+      const raf2 = requestAnimationFrame(() => setAccordionTransitionsReady(true))
+      return () => cancelAnimationFrame(raf2)
+    })
+    return () => cancelAnimationFrame(raf1)
   }, [])
 
   // YouTube background video — loop :04 to :18, muted, no controls
@@ -958,7 +969,7 @@ export default function CubLakeCottage() {
                     style={{
                       display: 'grid',
                       gridTemplateRows: isOpen ? '1fr' : '0fr',
-                      transition: 'grid-template-rows 250ms ease',
+                      transition: accordionTransitionsReady ? 'grid-template-rows 250ms ease' : 'none',
                     }}
                   >
                     <div style={{ overflow: 'hidden' }}>
