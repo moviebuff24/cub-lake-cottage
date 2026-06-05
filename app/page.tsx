@@ -89,6 +89,10 @@ export default function CubLakeCottage() {
   const [photosLoaded, setPhotosLoaded] = useState(false)
   const isFirebasePhotoUpdate = useRef(false)
   const [uploading, setUploading] = useState(false)
+  const [customPropertySlots, setCustomPropertySlots] = useState<Array<{ id: string; label: string }>>([])
+  const [customInspirationSlots, setCustomInspirationSlots] = useState<Array<{ id: string; label: string }>>([])
+  const [addSlotModal, setAddSlotModal] = useState<{ type: 'property' | 'inspiration' } | null>(null)
+  const [newSlotLabel, setNewSlotLabel] = useState('')
   
   // File input refs
   const propertyInputRef = useRef<HTMLInputElement>(null)
@@ -137,6 +141,8 @@ export default function CubLakeCottage() {
         setPropertyPhotos(data.propertyPhotos || { front: null, lake: null, dock: null, living: null, kitchen: null })
         setInspirationPhotos(data.inspirationPhotos || { hottub: null, decor: null, firepit: null, dock: null })
         setVisionPhotos(data.visionPhotos ? Object.values(data.visionPhotos) as PhotoUpload[] : [])
+        setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPropertySlots) as Array<{ id: string; label: string }> : [])
+        setCustomInspirationSlots(data.customInspirationSlots ? Object.values(data.customInspirationSlots) as Array<{ id: string; label: string }> : [])
       }
       setPhotosLoaded(true)
     })
@@ -150,8 +156,8 @@ export default function CubLakeCottage() {
       isFirebasePhotoUpdate.current = false
       return
     }
-    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, visionPhotos })
-  }, [propertyPhotos, inspirationPhotos, visionPhotos, photosLoaded])
+    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots })
+  }, [propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots, photosLoaded])
 
   // Subscribe to shared scratchpad
   useEffect(() => {
@@ -285,6 +291,27 @@ export default function CubLakeCottage() {
         console.error('Failed to delete from storage:', err)
       )
     }
+  }
+
+  const removeCustomSlot = (type: 'property' | 'inspiration', id: string) => {
+    removePhoto(type, id)
+    if (type === 'property') {
+      setCustomPropertySlots(prev => prev.filter(s => s.id !== id))
+    } else {
+      setCustomInspirationSlots(prev => prev.filter(s => s.id !== id))
+    }
+  }
+
+  const confirmAddSlot = () => {
+    if (!newSlotLabel.trim() || !addSlotModal) return
+    const id = `custom-${Date.now()}`
+    if (addSlotModal.type === 'property') {
+      setCustomPropertySlots(prev => [...prev, { id, label: newSlotLabel.trim() }])
+    } else {
+      setCustomInspirationSlots(prev => [...prev, { id, label: newSlotLabel.trim() }])
+    }
+    setNewSlotLabel('')
+    setAddSlotModal(null)
   }
 
   const groupedTasks = tasks.reduce((acc, task) => {
@@ -454,8 +481,9 @@ export default function CubLakeCottage() {
               <span className="flex-1 h-px bg-border" />
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {photoCategories.map((cat, i) => {
+              {[...photoCategories, ...customPropertySlots.map(s => ({ id: s.id, label: s.label, icon: ImageIcon, hasImage: false, isCustom: true }))].map((cat, i) => {
                 const photo = propertyPhotos[cat.id]
+                const isCustom = 'isCustom' in cat
                 return (
                   <button
                     key={cat.id}
@@ -472,7 +500,7 @@ export default function CubLakeCottage() {
                           <span className="text-white text-sm font-medium">Change photo</span>
                         </div>
                         <button
-                          onClick={(e) => { e.stopPropagation(); removePhoto('property', cat.id) }}
+                          onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('property', cat.id) : removePhoto('property', cat.id) }}
                           className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
                         >
                           <X className="w-4 h-4" />
@@ -483,18 +511,24 @@ export default function CubLakeCottage() {
                       </>
                     ) : (
                       <>
-                        {/* Decorative corner */}
                         <div className="absolute top-0 right-0 w-12 h-12 overflow-hidden">
-                          <div 
+                          <div
                             className={`absolute -top-6 -right-6 w-12 h-12 rounded-full transition-transform duration-300 ${hoveredCategory === cat.id ? 'scale-150' : ''}`}
                             style={{ backgroundColor: 'rgba(70, 130, 180, 0.15)' }}
                           />
                         </div>
-                        
+                        {isCustom && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeCustomSlot('property', cat.id) }}
+                            className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
                           <div className={`p-4 rounded-2xl transition-all duration-300 ${
                             hoveredCategory === cat.id ? 'scale-110 shadow-lg' : ''
-                          }`} style={{ 
+                          }`} style={{
                             backgroundColor: hoveredCategory === cat.id ? '#3d5a3c' : 'rgba(61, 90, 60, 0.1)',
                             color: hoveredCategory === cat.id ? 'white' : '#3d5a3c'
                           }}>
@@ -510,6 +544,16 @@ export default function CubLakeCottage() {
                   </button>
                 )
               })}
+              {/* Add new photo slot */}
+              <button
+                onClick={() => { setAddSlotModal({ type: 'property' }); setNewSlotLabel('') }}
+                className="group aspect-square rounded-2xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-3 transition-all hover:shadow-lg hover:-translate-y-1 hover:bg-secondary/50"
+              >
+                <div className="p-4 rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                  <Plus className="w-6 h-6" />
+                </div>
+                <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Photo</span>
+              </button>
             </div>
           </div>
 
@@ -522,7 +566,7 @@ export default function CubLakeCottage() {
               <span className="flex-1 h-px bg-border" />
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {inspirationBoard.map((item) => {
+              {[...inspirationBoard, ...customInspirationSlots.map(s => ({ id: s.id, label: s.label, icon: ImageIcon, color: 'lake', isCustom: true }))].map((item) => {
                 const colorStyles = {
                   sunset: { bg: 'rgba(212, 165, 116, 0.12)', border: 'rgba(212, 165, 116, 0.3)', text: '#d4a574', hover: 'rgba(212, 165, 116, 0.2)' },
                   lake: { bg: 'rgba(70, 130, 180, 0.12)', border: 'rgba(70, 130, 180, 0.3)', text: '#4682b4', hover: 'rgba(70, 130, 180, 0.2)' },
@@ -530,7 +574,8 @@ export default function CubLakeCottage() {
                 }
                 const colors = colorStyles[item.color as keyof typeof colorStyles]
                 const photo = inspirationPhotos[item.id]
-                
+                const isCustom = 'isCustom' in item
+
                 return (
                   <button
                     key={item.id}
@@ -545,7 +590,7 @@ export default function CubLakeCottage() {
                           <span className="text-white text-sm font-medium">Change photo</span>
                         </div>
                         <button
-                          onClick={(e) => { e.stopPropagation(); removePhoto('inspiration', item.id) }}
+                          onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('inspiration', item.id) : removePhoto('inspiration', item.id) }}
                           className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
                         >
                           <X className="w-4 h-4" />
@@ -556,13 +601,19 @@ export default function CubLakeCottage() {
                       </>
                     ) : (
                       <>
-                        {/* Shimmer effect on hover */}
                         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
                           <div className="absolute inset-0 animate-shimmer" style={{ background: `linear-gradient(90deg, transparent 0%, ${colors.hover} 50%, transparent 100%)`, backgroundSize: '200% 100%' }} />
                         </div>
-                        
+                        {isCustom && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeCustomSlot('inspiration', item.id) }}
+                            className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                          <div 
+                          <div
                             className="p-4 rounded-2xl transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg"
                             style={{ backgroundColor: colors.bg, color: colors.text }}
                           >
@@ -575,8 +626,8 @@ export default function CubLakeCottage() {
                   </button>
                 )
               })}
-              <button 
-                onClick={() => triggerUpload('inspiration', `custom-${Date.now()}`)}
+              <button
+                onClick={() => { setAddSlotModal({ type: 'inspiration' }); setNewSlotLabel('') }}
                 className="group aspect-[4/3] rounded-2xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-3 transition-all hover:shadow-lg hover:-translate-y-1 hover:bg-secondary/50"
               >
                 <div className="p-4 rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
@@ -883,6 +934,53 @@ export default function CubLakeCottage() {
                 style={{ backgroundColor: '#3d5a3c' }}
               >
                 Add Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Photo/Inspo Slot Modal */}
+      {addSlotModal && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setAddSlotModal(null)}
+        >
+          <div
+            className="bg-card rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-border"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="font-serif text-xl font-medium mb-2">
+              {addSlotModal.type === 'property' ? 'Add a photo spot' : 'Add inspiration'}
+            </h3>
+            <p className="text-sm text-muted-foreground mb-5">
+              {addSlotModal.type === 'property'
+                ? 'Name the room or area — you can upload a photo after.'
+                : 'Name this inspiration category — you can upload a photo after.'}
+            </p>
+            <input
+              type="text"
+              value={newSlotLabel}
+              onChange={e => setNewSlotLabel(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmAddSlot()}
+              placeholder={addSlotModal.type === 'property' ? 'e.g. Back Deck, Garage, Basement…' : 'e.g. Kayak Storage, Landscaping…'}
+              autoFocus
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 mb-5"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setAddSlotModal(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-secondary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAddSlot}
+                disabled={!newSlotLabel.trim()}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-all hover:opacity-90"
+                style={{ backgroundColor: '#3d5a3c' }}
+              >
+                Add
               </button>
             </div>
           </div>
