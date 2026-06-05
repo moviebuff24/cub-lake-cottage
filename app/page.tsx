@@ -441,16 +441,36 @@ export default function CubLakeCottage() {
 
   const handlePropertyDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    if (over && active.id !== over.id) {
-      setPropertyOrder(prev => arrayMove(prev, prev.indexOf(String(active.id)), prev.indexOf(String(over.id))))
-    }
+    if (!over || active.id === over.id) return
+    const knownIds = new Set(propertyOrder)
+    const allIds = [
+      ...propertyOrder,
+      ...photoCategories.map(c => c.id).filter(id => !knownIds.has(id)),
+      ...customPropertySlots.map(s => s.id).filter(id => !knownIds.has(id)),
+    ]
+    const from = allIds.indexOf(String(active.id))
+    const to = allIds.indexOf(String(over.id))
+    if (from === -1 || to === -1) return
+    const newOrder = arrayMove(allIds, from, to)
+    setPropertyOrder(newOrder)
+    set(dbRef(db, 'photos/propertyOrder'), newOrder)
   }
 
   const handleInspirationDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    if (over && active.id !== over.id) {
-      setInspirationOrder(prev => arrayMove(prev, prev.indexOf(String(active.id)), prev.indexOf(String(over.id))))
-    }
+    if (!over || active.id === over.id) return
+    const knownIds = new Set(inspirationOrder)
+    const allIds = [
+      ...inspirationOrder,
+      ...inspirationBoard.map(c => c.id).filter(id => !knownIds.has(id)),
+      ...customInspirationSlots.map(s => s.id).filter(id => !knownIds.has(id)),
+    ]
+    const from = allIds.indexOf(String(active.id))
+    const to = allIds.indexOf(String(over.id))
+    if (from === -1 || to === -1) return
+    const newOrder = arrayMove(allIds, from, to)
+    setInspirationOrder(newOrder)
+    set(dbRef(db, 'photos/inspirationOrder'), newOrder)
   }
 
   // Ordered tile arrays for rendering
@@ -1246,7 +1266,7 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
 
   return (
     <div
-      className={`group relative p-5 rounded-2xl bg-background border-2 border-border hover:border-primary/30 transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+      className={`group relative pl-5 pr-8 py-5 rounded-2xl bg-background border-2 border-border hover:border-primary/30 transition-all hover:shadow-lg hover:-translate-y-0.5 ${
         task.completed ? 'opacity-60' : ''
       }`}
       style={{ animationDelay: `${(groupIndex * 3 + index) * 50}ms` }}
@@ -1285,7 +1305,7 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
           </span>
         </div>
         {/* Action icons — absolutely positioned so they don't push the date inward */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); setShowNotes(s => !s) }}
             className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
