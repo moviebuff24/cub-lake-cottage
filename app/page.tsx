@@ -504,18 +504,25 @@ export default function CubLakeCottage() {
             transform: translate(-50%, -50%);
             pointer-events: none;
           }
+          #yt-hero-wrapper, #yt-hero-wrapper * {
+            pointer-events: none !important;
+          }
         ` }} />
-        <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ backgroundColor: '#3d5a3c' }}>
+
+        {/* Layer 0 — video + gradients, fully passive */}
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none" style={{ backgroundColor: '#3d5a3c' }}>
           <div id="yt-hero-wrapper" className="absolute inset-0">
             <div id="yt-hero-player" />
           </div>
-          {/* Loop mask — covers the brief YouTube UI flash during seek */}
-          <div id="yt-loop-mask" className="absolute inset-0 pointer-events-none" style={{ backgroundColor: '#111', opacity: 0, zIndex: 1 }} />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60" style={{ zIndex: 2 }} />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/20" style={{ zIndex: 2 }} />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/20" />
         </div>
 
-        <div className="relative z-10 flex-1 flex flex-col px-6 pt-8 pb-16 md:px-12 lg:px-20">
+        {/* Layer 1 — loop mask, between video and content so it never covers the title */}
+        <div id="yt-loop-mask" className="absolute inset-0 z-10 pointer-events-none" style={{ backgroundColor: '#111', opacity: 0 }} />
+
+        {/* Layer 2 — all content, always on top and always interactive */}
+        <div className="relative z-20 flex-1 flex flex-col px-6 pt-8 pb-16 md:px-12 lg:px-20">
           {/* Header */}
           <div className={`flex items-center justify-between mb-auto ${mounted ? 'animate-fade-in-up' : 'opacity-0'}`}>
             <div className="flex items-center gap-3">
