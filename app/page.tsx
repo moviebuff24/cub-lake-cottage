@@ -30,6 +30,7 @@ import {
   X,
   Upload,
   MessageSquare,
+  GripVertical,
 } from 'lucide-react'
 import { type Task, initialTasks, MONTHS_ORDER } from '@/lib/tasks'
 
@@ -1183,11 +1184,17 @@ function SortablePhotoTile({ id, children }: { id: string; children: React.React
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 10 : undefined }}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 10 : undefined, position: 'relative' }}
       {...attributes}
-      {...listeners}
-      className="cursor-grab active:cursor-grabbing touch-none"
+      className="group/tile"
     >
+      {/* Drag handle — separate from the click target so both work independently */}
+      <div
+        {...listeners}
+        className="absolute top-2 left-2 z-20 p-1 rounded-md bg-black/50 text-white opacity-0 group-hover/tile:opacity-100 transition-opacity cursor-grab active:cursor-grabbing touch-none"
+      >
+        <GripVertical className="w-3.5 h-3.5" />
+      </div>
       {children}
     </div>
   )
