@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { ref, onValue, set } from 'firebase/database'
-import { db } from '@/lib/firebase'
+import { ref as dbRef, onValue, set } from 'firebase/database'
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { db, storage } from '@/lib/firebase'
 import {
   Home,
   Waves,
@@ -61,6 +62,7 @@ interface PhotoUpload {
   id: string
   url: string
   name: string
+  storagePath?: string
 }
 
 
@@ -73,34 +75,13 @@ export default function CubLakeCottage() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026', notes: '' })
   
-  // Photo states
-  const [propertyPhotos, setPropertyPhotos] = useState<Record<string, PhotoUpload | null>>(() => {
-    if (typeof window === 'undefined') return { front: null, lake: null, dock: null, living: null, kitchen: null }
-    try {
-      const saved = localStorage.getItem('cubLakePropertyPhotos')
-      return saved ? JSON.parse(saved) : { front: null, lake: null, dock: null, living: null, kitchen: null }
-    } catch {
-      return { front: null, lake: null, dock: null, living: null, kitchen: null }
-    }
-  })
-  const [inspirationPhotos, setInspirationPhotos] = useState<Record<string, PhotoUpload | null>>(() => {
-    if (typeof window === 'undefined') return { hottub: null, decor: null, firepit: null, dock: null }
-    try {
-      const saved = localStorage.getItem('cubLakeInspirationPhotos')
-      return saved ? JSON.parse(saved) : { hottub: null, decor: null, firepit: null, dock: null }
-    } catch {
-      return { hottub: null, decor: null, firepit: null, dock: null }
-    }
-  })
-  const [visionPhotos, setVisionPhotos] = useState<PhotoUpload[]>(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem('cubLakeVisionPhotos')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
+  // Photo states — synced via Firebase RTDB (metadata) + Firebase Storage (files)
+  const [propertyPhotos, setPropertyPhotos] = useState<Record<string, PhotoUpload | null>>({ front: null, lake: null, dock: null, living: null, kitchen: null })
+  const [inspirationPhotos, setInspirationPhotos] = useState<Record<string, PhotoUpload | null>>({ hottub: null, decor: null, firepit: null, dock: null })
+  const [visionPhotos, setVisionPhotos] = useState<PhotoUpload[]>([])
+  const [photosLoaded, setPhotosLoaded] = useState(false)
+  const isFirebasePhotoUpdate = useRef(false)
+  const [uploading, setUploading] = useState(false)
   
   // File input refs
   const propertyInputRef = useRef<HTMLInputElement>(null)
@@ -119,7 +100,7 @@ export default function CubLakeCottage() {
 
   // Subscribe to Firebase tasks — syncs across all devices in real time
   useEffect(() => {
-    const tasksRef = ref(db, 'tasks')
+    const tasksRef = dbRef(db, 'tasks')
     const unsubscribe = onValue(tasksRef, (snapshot) => {
       const data = snapshot.val()
       isFirebaseUpdate.current = true
@@ -136,26 +117,34 @@ export default function CubLakeCottage() {
       isFirebaseUpdate.current = false
       return
     }
-    set(ref(db, 'tasks'), tasks)
+    set(dbRef(db, 'tasks'), tasks)
   }, [tasks, tasksLoaded])
 
+  // Subscribe to Firebase photos metadata
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cubLakePropertyPhotos', JSON.stringify(propertyPhotos))
-    }
-  }, [propertyPhotos])
+    const photosRef = dbRef(db, 'photos')
+    const unsubscribe = onValue(photosRef, (snapshot) => {
+      const data = snapshot.val()
+      isFirebasePhotoUpdate.current = true
+      if (data) {
+        setPropertyPhotos(data.propertyPhotos || { front: null, lake: null, dock: null, living: null, kitchen: null })
+        setInspirationPhotos(data.inspirationPhotos || { hottub: null, decor: null, firepit: null, dock: null })
+        setVisionPhotos(data.visionPhotos ? Object.values(data.visionPhotos) as PhotoUpload[] : [])
+      }
+      setPhotosLoaded(true)
+    })
+    return () => unsubscribe()
+  }, [])
 
+  // Write photo metadata to Firebase only when changed locally
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cubLakeInspirationPhotos', JSON.stringify(inspirationPhotos))
+    if (!photosLoaded) return
+    if (isFirebasePhotoUpdate.current) {
+      isFirebasePhotoUpdate.current = false
+      return
     }
-  }, [inspirationPhotos])
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cubLakeVisionPhotos', JSON.stringify(visionPhotos))
-    }
-  }, [visionPhotos])
+    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, visionPhotos })
+  }, [propertyPhotos, inspirationPhotos, visionPhotos, photosLoaded])
 
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId)
@@ -196,15 +185,20 @@ export default function CubLakeCottage() {
     setShowAddTask(false)
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !activeUploadTarget) return
 
     const target = activeUploadTarget
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string
-      const upload: PhotoUpload = { id: Date.now().toString(), url: dataUrl, name: file.name }
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const storagePath = `photos/${Date.now()}-${safeName}`
+    const fileRef = storageRef(storage, storagePath)
+
+    setUploading(true)
+    try {
+      const snapshot = await uploadBytes(fileRef, file)
+      const url = await getDownloadURL(snapshot.ref)
+      const upload: PhotoUpload = { id: Date.now().toString(), url, name: file.name, storagePath }
 
       if (target.type === 'property' && target.id) {
         setPropertyPhotos(prev => ({ ...prev, [target.id!]: upload }))
@@ -213,9 +207,12 @@ export default function CubLakeCottage() {
       } else if (target.type === 'vision') {
         setVisionPhotos(prev => [...prev, upload])
       }
-      setActiveUploadTarget(null)
+    } catch (err) {
+      console.error('Photo upload failed:', err)
     }
-    reader.readAsDataURL(file)
+
+    setUploading(false)
+    setActiveUploadTarget(null)
     e.target.value = ''
   }
 
@@ -227,12 +224,23 @@ export default function CubLakeCottage() {
   }
 
   const removePhoto = (type: 'property' | 'inspiration' | 'vision', id: string) => {
+    let photo: PhotoUpload | null | undefined
+
     if (type === 'property') {
+      photo = propertyPhotos[id]
       setPropertyPhotos(prev => ({ ...prev, [id]: null }))
     } else if (type === 'inspiration') {
+      photo = inspirationPhotos[id]
       setInspirationPhotos(prev => ({ ...prev, [id]: null }))
     } else {
+      photo = visionPhotos.find(p => p.id === id)
       setVisionPhotos(prev => prev.filter(p => p.id !== id))
+    }
+
+    if (photo?.storagePath) {
+      deleteObject(storageRef(storage, photo.storagePath)).catch(err =>
+        console.error('Failed to delete from storage:', err)
+      )
     }
   }
 
@@ -249,6 +257,14 @@ export default function CubLakeCottage() {
       <input type="file" ref={inspirationInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
       <input type="file" ref={visionInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
       
+      {/* Upload progress banner */}
+      {uploading && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-full bg-foreground text-background text-sm font-medium shadow-xl flex items-center gap-2">
+          <div className="w-4 h-4 border-2 border-background/30 border-t-background rounded-full animate-spin" />
+          Uploading photo…
+        </div>
+      )}
+
       {/* Hero Section - Replace HERO_IMAGE_URL with your cottage photo */}
       <section className="relative overflow-hidden text-white min-h-[85vh] flex flex-col">
         {/* Background Image - swap this URL for your cottage photo */}
