@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Circle,
   ChevronRight,
+  ChevronDown,
   MapPin,
   Bed,
   Bath,
@@ -74,6 +75,8 @@ export default function CubLakeCottage() {
   const isFirebaseUpdate = useRef(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026', notes: '' })
+  const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({})
+  const openMonthsInitialized = useRef(false)
   
   // Scratchpad state — shared notes, synced via Firebase RTDB
   const [scratchpad, setScratchpad] = useState('')
@@ -129,6 +132,22 @@ export default function CubLakeCottage() {
       return
     }
     set(dbRef(db, 'tasks'), tasks)
+  }, [tasks, tasksLoaded])
+
+  // Initialize open/closed state for month groups once tasks load
+  useEffect(() => {
+    if (!tasksLoaded || openMonthsInitialized.current) return
+    const grouped = tasks.reduce((acc, task) => {
+      if (!acc[task.month]) acc[task.month] = []
+      acc[task.month].push(task)
+      return acc
+    }, {} as Record<string, Task[]>)
+    const initial: Record<string, boolean> = {}
+    Object.entries(grouped).forEach(([month, monthTasks]) => {
+      initial[month] = getDefaultMonthOpen(month, monthTasks)
+    })
+    setOpenMonths(initial)
+    openMonthsInitialized.current = true
   }, [tasks, tasksLoaded])
 
   // Subscribe to Firebase photos metadata
@@ -200,6 +219,10 @@ export default function CubLakeCottage() {
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
+  }
+
+  const toggleMonth = (month: string) => {
+    setOpenMonths(prev => ({ ...prev, [month]: !prev[month] }))
   }
 
   const toggleTask = (taskId: string) => {
@@ -668,36 +691,54 @@ export default function CubLakeCottage() {
           </div>
 
           {/* Task list by month */}
-          <div className="space-y-10">
-            {Object.entries(groupedTasks).map(([month, monthTasks], groupIndex) => (
-              <div key={month}>
-                <div className="flex items-center gap-4 mb-5">
-                  <span 
-                    className="px-4 py-1.5 rounded-full text-sm font-semibold text-white shadow-sm"
-                    style={{ backgroundColor: '#3d5a3c' }}
+          <div className="space-y-6">
+            {MONTHS_ORDER.filter(month => groupedTasks[month]?.length > 0).map((month, groupIndex) => {
+              const monthTasks = groupedTasks[month] || []
+              const isOpen = openMonths[month] ?? getDefaultMonthOpen(month, monthTasks)
+              const completedInMonth = monthTasks.filter(t => t.completed).length
+              const sortedTasks = [...monthTasks].sort((a, b) => {
+                if (a.completed === b.completed) return 0
+                return a.completed ? 1 : -1
+              })
+              return (
+                <div key={month}>
+                  <button
+                    onClick={() => toggleMonth(month)}
+                    className="flex items-center gap-4 mb-4 w-full text-left group"
                   >
-                    {month}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {monthTasks.length} task{monthTasks.length !== 1 ? 's' : ''}
-                  </span>
-                  <div className="flex-1 h-px bg-border" />
-                </div>
-                <div className="space-y-3">
-                  {monthTasks.map((task, i) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      index={i}
-                      groupIndex={groupIndex}
-                      onToggle={() => toggleTask(task.id)}
-                      onDelete={() => deleteTask(task.id)}
-                      onUpdateNotes={(notes) => updateTaskNotes(task.id, notes)}
+                    <span
+                      className="px-4 py-1.5 rounded-full text-sm font-semibold text-white shadow-sm"
+                      style={{ backgroundColor: '#3d5a3c' }}
+                    >
+                      {month}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {completedInMonth}/{monthTasks.length} done
+                    </span>
+                    <div className="flex-1 h-px bg-border" />
+                    <ChevronDown
+                      className="w-4 h-4 text-muted-foreground transition-transform duration-200 group-hover:text-foreground"
+                      style={{ transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}
                     />
-                  ))}
+                  </button>
+                  {isOpen && (
+                    <div className="space-y-3">
+                      {sortedTasks.map((task, i) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          index={i}
+                          groupIndex={groupIndex}
+                          onToggle={() => toggleTask(task.id)}
+                          onDelete={() => deleteTask(task.id)}
+                          onUpdateNotes={(notes) => updateTaskNotes(task.id, notes)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </section>
@@ -988,6 +1029,24 @@ export default function CubLakeCottage() {
       )}
     </main>
   )
+}
+
+function getDefaultMonthOpen(month: string, monthTasks: Task[]): boolean {
+  if (month === 'Future Projects') return false
+
+  const [monthName, yearStr] = month.split(' ')
+  const monthDate = new Date(`${monthName} 1, ${yearStr}`)
+  const now = new Date()
+  const firstOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+  if (monthDate > firstOfCurrentMonth) return false  // future month
+
+  const isCurrentMonth = monthDate.getTime() === firstOfCurrentMonth.getTime()
+  const allComplete = monthTasks.length > 0 && monthTasks.every(t => t.completed)
+
+  if (allComplete && !isCurrentMonth) return false  // past month fully done
+
+  return true
 }
 
 function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }: {
