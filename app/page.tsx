@@ -504,7 +504,7 @@ export default function CubLakeCottage() {
             pointer-events: none;
           }
         ` }} />
-        <div className="absolute inset-0 overflow-hidden" style={{ backgroundColor: '#3d5a3c' }}>
+        <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ backgroundColor: '#3d5a3c' }}>
           <div id="yt-hero-wrapper" className="absolute inset-0">
             <div id="yt-hero-player" />
           </div>
