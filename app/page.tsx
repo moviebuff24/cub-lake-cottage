@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, rectSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { ref as dbRef, onValue, set } from 'firebase/database'
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase'
@@ -94,6 +97,8 @@ export default function CubLakeCottage() {
   const [uploading, setUploading] = useState(false)
   const [customPropertySlots, setCustomPropertySlots] = useState<Array<{ id: string; label: string }>>([])
   const [customInspirationSlots, setCustomInspirationSlots] = useState<Array<{ id: string; label: string }>>([])
+  const [propertyOrder, setPropertyOrder] = useState<string[]>(['front', 'lake', 'dock', 'living', 'kitchen'])
+  const [inspirationOrder, setInspirationOrder] = useState<string[]>(['hottub', 'decor', 'firepit', 'dock'])
   const [addSlotModal, setAddSlotModal] = useState<{ type: 'property' | 'inspiration' } | null>(null)
   const [newSlotLabel, setNewSlotLabel] = useState('')
   
@@ -249,6 +254,8 @@ export default function CubLakeCottage() {
         setVisionPhotos(data.visionPhotos ? Object.values(data.visionPhotos) as PhotoUpload[] : [])
         setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPropertySlots) as Array<{ id: string; label: string }> : [])
         setCustomInspirationSlots(data.customInspirationSlots ? Object.values(data.customInspirationSlots) as Array<{ id: string; label: string }> : [])
+        if (data.propertyOrder?.length) setPropertyOrder(data.propertyOrder)
+        if (data.inspirationOrder?.length) setInspirationOrder(data.inspirationOrder)
       }
       setPhotosLoaded(true)
     })
@@ -262,8 +269,8 @@ export default function CubLakeCottage() {
       isFirebasePhotoUpdate.current = false
       return
     }
-    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots })
-  }, [propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots, photosLoaded])
+    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder })
+  }, [propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder, photosLoaded])
 
   // Subscribe to shared scratchpad
   useEffect(() => {
@@ -407,8 +414,10 @@ export default function CubLakeCottage() {
     removePhoto(type, id)
     if (type === 'property') {
       setCustomPropertySlots(prev => prev.filter(s => s.id !== id))
+      setPropertyOrder(prev => prev.filter(oid => oid !== id))
     } else {
       setCustomInspirationSlots(prev => prev.filter(s => s.id !== id))
+      setInspirationOrder(prev => prev.filter(oid => oid !== id))
     }
   }
 
@@ -417,12 +426,48 @@ export default function CubLakeCottage() {
     const id = `custom-${Date.now()}`
     if (addSlotModal.type === 'property') {
       setCustomPropertySlots(prev => [...prev, { id, label: newSlotLabel.trim() }])
+      setPropertyOrder(prev => [...prev, id])
     } else {
       setCustomInspirationSlots(prev => [...prev, { id, label: newSlotLabel.trim() }])
+      setInspirationOrder(prev => [...prev, id])
     }
     setNewSlotLabel('')
     setAddSlotModal(null)
   }
+
+  // Drag-and-drop sensors — require 8px movement before drag activates so clicks still work
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
+  const handlePropertyDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      setPropertyOrder(prev => arrayMove(prev, prev.indexOf(String(active.id)), prev.indexOf(String(over.id))))
+    }
+  }
+
+  const handleInspirationDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      setInspirationOrder(prev => arrayMove(prev, prev.indexOf(String(active.id)), prev.indexOf(String(over.id))))
+    }
+  }
+
+  // Ordered tile arrays for rendering
+  const allPropertyTiles = [
+    ...photoCategories.map(c => ({ ...c, isCustom: false as const })),
+    ...customPropertySlots.map(s => ({ id: s.id, label: s.label, icon: ImageIcon, hasImage: false, isCustom: true as const })),
+  ]
+  const allInspirationTiles = [
+    ...inspirationBoard.map(c => ({ ...c, isCustom: false as const })),
+    ...customInspirationSlots.map(s => ({ id: s.id, label: s.label, icon: ImageIcon, color: 'lake', isCustom: true as const })),
+  ]
+  // Ensure any tile whose ID isn't in the saved order yet still shows up
+  const knownPropertyIds = new Set(propertyOrder)
+  const knownInspirationIds = new Set(inspirationOrder)
+  const fullPropertyOrder = [...propertyOrder, ...allPropertyTiles.map(t => t.id).filter(id => !knownPropertyIds.has(id))]
+  const fullInspirationOrder = [...inspirationOrder, ...allInspirationTiles.map(t => t.id).filter(id => !knownInspirationIds.has(id))]
+  const orderedPropertyTiles = fullPropertyOrder.map(id => allPropertyTiles.find(t => t.id === id)).filter((t): t is NonNullable<typeof t> => t != null)
+  const orderedInspirationTiles = fullInspirationOrder.map(id => allInspirationTiles.find(t => t.id === id)).filter((t): t is NonNullable<typeof t> => t != null)
 
   const groupedTasks = tasks.reduce((acc, task) => {
     if (!acc[task.month]) acc[task.month] = []
@@ -599,162 +644,168 @@ export default function CubLakeCottage() {
               The place today
               <span className="flex-1 h-px bg-border" />
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {[...photoCategories, ...customPropertySlots.map(s => ({ id: s.id, label: s.label, icon: ImageIcon, hasImage: false, isCustom: true }))].map((cat, i) => {
-                const photo = propertyPhotos[cat.id]
-                const isCustom = 'isCustom' in cat
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => triggerUpload('property', cat.id)}
-                    className="group relative aspect-square rounded-2xl bg-card border border-border overflow-hidden hover:border-primary/50 transition-all hover:shadow-xl hover:-translate-y-1"
-                    onMouseEnter={() => setHoveredCategory(cat.id)}
-                    onMouseLeave={() => setHoveredCategory(null)}
-                    style={{ animationDelay: `${i * 100}ms` }}
-                  >
-                    {photo ? (
-                      <>
-                        <img src={photo.url} alt={cat.label} className="absolute inset-0 w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <span className="text-white text-sm font-medium">Change photo</span>
-                        </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handlePropertyDragEnd}>
+              <SortableContext items={fullPropertyOrder} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  {orderedPropertyTiles.map((cat) => {
+                    const photo = propertyPhotos[cat.id]
+                    const isCustom = cat.isCustom
+                    return (
+                      <SortablePhotoTile key={cat.id} id={cat.id}>
                         <button
-                          onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('property', cat.id) : removePhoto('property', cat.id) }}
-                          className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                          onClick={() => triggerUpload('property', cat.id)}
+                          className="group relative aspect-square w-full rounded-2xl bg-card border border-border overflow-hidden hover:border-primary/50 transition-all hover:shadow-xl hover:-translate-y-1"
+                          onMouseEnter={() => setHoveredCategory(cat.id)}
+                          onMouseLeave={() => setHoveredCategory(null)}
                         >
-                          <X className="w-4 h-4" />
+                          {photo ? (
+                            <>
+                              <img src={photo.url} alt={cat.label} className="absolute inset-0 w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="text-white text-sm font-medium">Change photo</span>
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('property', cat.id) : removePhoto('property', cat.id) }}
+                                onPointerDown={e => e.stopPropagation()}
+                                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                              <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                                <span className="text-white text-xs font-medium">{cat.label}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="absolute top-0 right-0 w-12 h-12 overflow-hidden">
+                                <div
+                                  className={`absolute -top-6 -right-6 w-12 h-12 rounded-full transition-transform duration-300 ${hoveredCategory === cat.id ? 'scale-150' : ''}`}
+                                  style={{ backgroundColor: 'rgba(70, 130, 180, 0.15)' }}
+                                />
+                              </div>
+                              {isCustom && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); removeCustomSlot('property', cat.id) }}
+                                  onPointerDown={e => e.stopPropagation()}
+                                  className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                                <div className={`p-4 rounded-2xl transition-all duration-300 ${hoveredCategory === cat.id ? 'scale-110 shadow-lg' : ''}`} style={{
+                                  backgroundColor: hoveredCategory === cat.id ? '#3d5a3c' : 'rgba(61, 90, 60, 0.1)',
+                                  color: hoveredCategory === cat.id ? 'white' : '#3d5a3c'
+                                }}>
+                                  <cat.icon className="w-6 h-6" />
+                                </div>
+                                <span className="text-sm font-medium text-center">{cat.label}</span>
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Plus className="w-3 h-3" /> Add photo
+                                </span>
+                              </div>
+                            </>
+                          )}
                         </button>
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                          <span className="text-white text-xs font-medium">{cat.label}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="absolute top-0 right-0 w-12 h-12 overflow-hidden">
-                          <div
-                            className={`absolute -top-6 -right-6 w-12 h-12 rounded-full transition-transform duration-300 ${hoveredCategory === cat.id ? 'scale-150' : ''}`}
-                            style={{ backgroundColor: 'rgba(70, 130, 180, 0.15)' }}
-                          />
-                        </div>
-                        {isCustom && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); removeCustomSlot('property', cat.id) }}
-                            className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                          <div className={`p-4 rounded-2xl transition-all duration-300 ${
-                            hoveredCategory === cat.id ? 'scale-110 shadow-lg' : ''
-                          }`} style={{
-                            backgroundColor: hoveredCategory === cat.id ? '#3d5a3c' : 'rgba(61, 90, 60, 0.1)',
-                            color: hoveredCategory === cat.id ? 'white' : '#3d5a3c'
-                          }}>
-                            <cat.icon className="w-6 h-6" />
-                          </div>
-                          <span className="text-sm font-medium text-center">{cat.label}</span>
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Plus className="w-3 h-3" /> Add photo
-                          </span>
-                        </div>
-                      </>
-                    )}
+                      </SortablePhotoTile>
+                    )
+                  })}
+                  <button
+                    onClick={() => { setAddSlotModal({ type: 'property' }); setNewSlotLabel('') }}
+                    className="group aspect-square rounded-2xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-3 transition-all hover:shadow-lg hover:-translate-y-1 hover:bg-secondary/50"
+                  >
+                    <div className="p-4 rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                      <Plus className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Photo</span>
                   </button>
-                )
-              })}
-              {/* Add new photo slot */}
-              <button
-                onClick={() => { setAddSlotModal({ type: 'property' }); setNewSlotLabel('') }}
-                className="group aspect-square rounded-2xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-3 transition-all hover:shadow-lg hover:-translate-y-1 hover:bg-secondary/50"
-              >
-                <div className="p-4 rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                  <Plus className="w-6 h-6" />
                 </div>
-                <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Photo</span>
-              </button>
-            </div>
+              </SortableContext>
+            </DndContext>
           </div>
 
           {/* Inspiration board - Where it's headed */}
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-widest mb-6 flex items-center gap-3">
               <span className="w-8 h-px bg-border" />
-              Where it&apos;s headed 
+              Where it&apos;s headed
               <Sparkles className="w-4 h-4" style={{ color: '#d4a574' }} />
               <span className="flex-1 h-px bg-border" />
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {[...inspirationBoard, ...customInspirationSlots.map(s => ({ id: s.id, label: s.label, icon: ImageIcon, color: 'lake', isCustom: true }))].map((item) => {
-                const colorStyles = {
-                  sunset: { bg: 'rgba(212, 165, 116, 0.12)', border: 'rgba(212, 165, 116, 0.3)', text: '#d4a574', hover: 'rgba(212, 165, 116, 0.2)' },
-                  lake: { bg: 'rgba(70, 130, 180, 0.12)', border: 'rgba(70, 130, 180, 0.3)', text: '#4682b4', hover: 'rgba(70, 130, 180, 0.2)' },
-                  pine: { bg: 'rgba(61, 90, 60, 0.12)', border: 'rgba(61, 90, 60, 0.3)', text: '#3d5a3c', hover: 'rgba(61, 90, 60, 0.2)' },
-                }
-                const colors = colorStyles[item.color as keyof typeof colorStyles]
-                const photo = inspirationPhotos[item.id]
-                const isCustom = 'isCustom' in item
-
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => triggerUpload('inspiration', item.id)}
-                    className="group relative aspect-[4/3] rounded-2xl overflow-hidden border-2 transition-all hover:shadow-xl hover:-translate-y-1"
-                    style={{ backgroundColor: photo ? undefined : colors.bg, borderColor: colors.border }}
-                  >
-                    {photo ? (
-                      <>
-                        <img src={photo.url} alt={item.label} className="absolute inset-0 w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <span className="text-white text-sm font-medium">Change photo</span>
-                        </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleInspirationDragEnd}>
+              <SortableContext items={fullInspirationOrder} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  {orderedInspirationTiles.map((item) => {
+                    const colorStyles = {
+                      sunset: { bg: 'rgba(212, 165, 116, 0.12)', border: 'rgba(212, 165, 116, 0.3)', text: '#d4a574', hover: 'rgba(212, 165, 116, 0.2)' },
+                      lake: { bg: 'rgba(70, 130, 180, 0.12)', border: 'rgba(70, 130, 180, 0.3)', text: '#4682b4', hover: 'rgba(70, 130, 180, 0.2)' },
+                      pine: { bg: 'rgba(61, 90, 60, 0.12)', border: 'rgba(61, 90, 60, 0.3)', text: '#3d5a3c', hover: 'rgba(61, 90, 60, 0.2)' },
+                    }
+                    const colors = colorStyles[item.color as keyof typeof colorStyles]
+                    const photo = inspirationPhotos[item.id]
+                    const isCustom = item.isCustom
+                    return (
+                      <SortablePhotoTile key={item.id} id={item.id}>
                         <button
-                          onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('inspiration', item.id) : removePhoto('inspiration', item.id) }}
-                          className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                          onClick={() => triggerUpload('inspiration', item.id)}
+                          className="group relative aspect-[4/3] w-full rounded-2xl overflow-hidden border-2 transition-all hover:shadow-xl hover:-translate-y-1"
+                          style={{ backgroundColor: photo ? undefined : colors.bg, borderColor: colors.border }}
                         >
-                          <X className="w-4 h-4" />
+                          {photo ? (
+                            <>
+                              <img src={photo.url} alt={item.label} className="absolute inset-0 w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="text-white text-sm font-medium">Change photo</span>
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('inspiration', item.id) : removePhoto('inspiration', item.id) }}
+                                onPointerDown={e => e.stopPropagation()}
+                                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                              <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                                <span className="text-white text-xs font-medium">{item.label}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="absolute inset-0 animate-shimmer" style={{ background: `linear-gradient(90deg, transparent 0%, ${colors.hover} 50%, transparent 100%)`, backgroundSize: '200% 100%' }} />
+                              </div>
+                              {isCustom && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); removeCustomSlot('inspiration', item.id) }}
+                                  onPointerDown={e => e.stopPropagation()}
+                                  className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                                <div className="p-4 rounded-2xl transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg" style={{ backgroundColor: colors.bg, color: colors.text }}>
+                                  <item.icon className="w-6 h-6" />
+                                </div>
+                                <span className="text-sm font-semibold">{item.label}</span>
+                              </div>
+                            </>
+                          )}
                         </button>
-                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                          <span className="text-white text-xs font-medium">{item.label}</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="absolute inset-0 animate-shimmer" style={{ background: `linear-gradient(90deg, transparent 0%, ${colors.hover} 50%, transparent 100%)`, backgroundSize: '200% 100%' }} />
-                        </div>
-                        {isCustom && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); removeCustomSlot('inspiration', item.id) }}
-                            className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                          <div
-                            className="p-4 rounded-2xl transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg"
-                            style={{ backgroundColor: colors.bg, color: colors.text }}
-                          >
-                            <item.icon className="w-6 h-6" />
-                          </div>
-                          <span className="text-sm font-semibold">{item.label}</span>
-                        </div>
-                      </>
-                    )}
+                      </SortablePhotoTile>
+                    )
+                  })}
+                  <button
+                    onClick={() => { setAddSlotModal({ type: 'inspiration' }); setNewSlotLabel('') }}
+                    className="group aspect-[4/3] rounded-2xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-3 transition-all hover:shadow-lg hover:-translate-y-1 hover:bg-secondary/50"
+                  >
+                    <div className="p-4 rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                      <Plus className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Inspo</span>
                   </button>
-                )
-              })}
-              <button
-                onClick={() => { setAddSlotModal({ type: 'inspiration' }); setNewSlotLabel('') }}
-                className="group aspect-[4/3] rounded-2xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-3 transition-all hover:shadow-lg hover:-translate-y-1 hover:bg-secondary/50"
-              >
-                <div className="p-4 rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                  <Plus className="w-6 h-6" />
                 </div>
-                <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Inspo</span>
-              </button>
-            </div>
+              </SortableContext>
+            </DndContext>
           </div>
         </div>
       </section>
@@ -1124,6 +1175,21 @@ export default function CubLakeCottage() {
         </div>
       )}
     </main>
+  )
+}
+
+function SortablePhotoTile({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 10 : undefined }}
+      {...attributes}
+      {...listeners}
+      className="cursor-grab active:cursor-grabbing touch-none"
+    >
+      {children}
+    </div>
   )
 }
 
