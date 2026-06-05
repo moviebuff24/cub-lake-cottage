@@ -112,6 +112,59 @@ export default function CubLakeCottage() {
     setMounted(true)
   }, [])
 
+  // YouTube background video — loop :04 to :18, muted, no controls
+  useEffect(() => {
+    const START = 4
+    let player: any = null
+
+    const initPlayer = () => {
+      player = new (window as any).YT.Player('yt-hero-player', {
+        videoId: 'cyi6R1x1pkk',
+        playerVars: {
+          autoplay: 1,
+          mute: 1,
+          controls: 0,
+          start: START,
+          end: 18,
+          playsinline: 1,
+          rel: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          disablekb: 1,
+        },
+        events: {
+          onReady: (e: any) => e.target.playVideo(),
+          onStateChange: (e: any) => {
+            if (e.data === 0) {  // ENDED — seek back to start of clip and replay
+              e.target.seekTo(START)
+              e.target.playVideo()
+            }
+          },
+        },
+      })
+    }
+
+    if ((window as any).YT?.Player) {
+      initPlayer()
+    } else {
+      const prev = (window as any).onYouTubeIframeAPIReady
+      ;(window as any).onYouTubeIframeAPIReady = () => {
+        if (prev) prev()
+        initPlayer()
+      }
+      if (!document.getElementById('yt-iframe-api')) {
+        const tag = document.createElement('script')
+        tag.id = 'yt-iframe-api'
+        tag.src = 'https://www.youtube.com/iframe_api'
+        document.head.appendChild(tag)
+      }
+    }
+
+    return () => {
+      try { player?.destroy() } catch {}
+    }
+  }, [])
+
   // Subscribe to Firebase tasks — syncs across all devices in real time
   useEffect(() => {
     const tasksRef = dbRef(db, 'tasks')
@@ -360,15 +413,22 @@ export default function CubLakeCottage() {
 
       {/* Hero Section - Replace HERO_IMAGE_URL with your cottage photo */}
       <section className="relative overflow-hidden text-white min-h-[85vh] flex flex-col">
-        {/* Background Image - swap this URL for your cottage photo */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-          style={{ 
-            backgroundImage: `url('/cottage-hero.jpg')`,
-            backgroundColor: '#3d5a3c' // Fallback color until you add your image
-          }}
-        >
-          {/* Gradient overlays for text readability */}
+        {/* YouTube background video */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          #yt-hero-wrapper iframe {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: max(100%, 177.78vh);
+            height: max(56.25vw, 100%);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+          }
+        ` }} />
+        <div className="absolute inset-0 overflow-hidden" style={{ backgroundColor: '#3d5a3c' }}>
+          <div id="yt-hero-wrapper" className="absolute inset-0">
+            <div id="yt-hero-player" />
+          </div>
           <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/20" />
         </div>
