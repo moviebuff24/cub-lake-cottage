@@ -75,6 +75,13 @@ export default function CubLakeCottage() {
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTask, setNewTask] = useState({ title: '', category: 'personal' as Task['category'], dueDate: '', month: 'June 2026', notes: '' })
   
+  // Scratchpad state — shared notes, synced via Firebase RTDB
+  const [scratchpad, setScratchpad] = useState('')
+  const [scratchpadSaved, setScratchpadSaved] = useState(false)
+  const scratchpadWriteRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scratchpadFocusedRef = useRef(false)
+  const pendingScratchpadUpdate = useRef<string | null>(null)
+
   // Photo states — synced via Firebase RTDB (metadata) + Firebase Storage (files)
   const [propertyPhotos, setPropertyPhotos] = useState<Record<string, PhotoUpload | null>>({ front: null, lake: null, dock: null, living: null, kitchen: null })
   const [inspirationPhotos, setInspirationPhotos] = useState<Record<string, PhotoUpload | null>>({ hottub: null, decor: null, firepit: null, dock: null })
@@ -145,6 +152,42 @@ export default function CubLakeCottage() {
     }
     set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, visionPhotos })
   }, [propertyPhotos, inspirationPhotos, visionPhotos, photosLoaded])
+
+  // Subscribe to shared scratchpad
+  useEffect(() => {
+    const scratchRef = dbRef(db, 'scratchpad')
+    const unsubscribe = onValue(scratchRef, (snapshot) => {
+      const data = snapshot.val() ?? ''
+      if (scratchpadFocusedRef.current) {
+        pendingScratchpadUpdate.current = data
+      } else {
+        setScratchpad(data)
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
+  const handleScratchpadChange = (value: string) => {
+    setScratchpad(value)
+    setScratchpadSaved(false)
+    if (scratchpadWriteRef.current) clearTimeout(scratchpadWriteRef.current)
+    scratchpadWriteRef.current = setTimeout(() => {
+      set(dbRef(db, 'scratchpad'), value).then(() => {
+        setScratchpadSaved(true)
+        setTimeout(() => setScratchpadSaved(false), 2500)
+      })
+    }, 800)
+  }
+
+  const handleScratchpadFocus = () => { scratchpadFocusedRef.current = true }
+
+  const handleScratchpadBlur = () => {
+    scratchpadFocusedRef.current = false
+    if (pendingScratchpadUpdate.current !== null) {
+      setScratchpad(pendingScratchpadUpdate.current)
+      pendingScratchpadUpdate.current = null
+    }
+  }
 
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId)
@@ -292,6 +335,7 @@ export default function CubLakeCottage() {
             <nav className="hidden md:flex items-center gap-8 text-sm">
               <button onClick={() => scrollToSection('property')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">The Property</button>
               <button onClick={() => scrollToSection('progress')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Progress</button>
+              <button onClick={() => scrollToSection('notes')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Notes</button>
               <button onClick={() => scrollToSection('vision')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Vision</button>
             </nav>
           </div>
@@ -603,6 +647,41 @@ export default function CubLakeCottage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Notepad Section */}
+      <section id="notes" className="px-6 py-20 md:px-12 lg:px-20">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center gap-4 mb-10">
+            <div className="p-3 rounded-2xl" style={{ backgroundColor: 'rgba(212, 165, 116, 0.1)' }}>
+              <MessageSquare className="w-6 h-6" style={{ color: '#d4a574' }} />
+            </div>
+            <div>
+              <h2 className="font-serif text-3xl md:text-4xl font-medium">The Notepad</h2>
+              <p className="text-muted-foreground mt-1">Shared notes — syncs to all devices in real time</p>
+            </div>
+          </div>
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
+            <textarea
+              value={scratchpad}
+              onChange={e => handleScratchpadChange(e.target.value)}
+              onFocus={handleScratchpadFocus}
+              onBlur={handleScratchpadBlur}
+              placeholder="Drop quick notes here — contractor quotes, decisions made, ideas, things to remember..."
+              rows={8}
+              className="w-full bg-transparent text-base resize-none focus:outline-none placeholder:text-muted-foreground/40 leading-relaxed"
+            />
+            <div className="flex items-center justify-between pt-4 border-t border-border mt-2">
+              <span className="text-xs text-muted-foreground">Changes save automatically</span>
+              <span
+                className="text-xs font-medium transition-opacity duration-300"
+                style={{ color: '#3d5a3c', opacity: scratchpadSaved ? 1 : 0 }}
+              >
+                ✓ Saved
+              </span>
+            </div>
           </div>
         </div>
       </section>
