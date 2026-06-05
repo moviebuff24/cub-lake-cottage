@@ -674,13 +674,25 @@ export default function CubLakeCottage() {
               className="w-full bg-transparent text-base resize-none focus:outline-none placeholder:text-muted-foreground/40 leading-relaxed"
             />
             <div className="flex items-center justify-between pt-4 border-t border-border mt-2">
-              <span className="text-xs text-muted-foreground">Changes save automatically</span>
               <span
                 className="text-xs font-medium transition-opacity duration-300"
                 style={{ color: '#3d5a3c', opacity: scratchpadSaved ? 1 : 0 }}
               >
                 ✓ Saved
               </span>
+              <button
+                onClick={() => {
+                  if (scratchpadWriteRef.current) clearTimeout(scratchpadWriteRef.current)
+                  set(dbRef(db, 'scratchpad'), scratchpad).then(() => {
+                    setScratchpadSaved(true)
+                    setTimeout(() => setScratchpadSaved(false), 2500)
+                  })
+                }}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-all hover:shadow-md"
+                style={{ backgroundColor: '#3d5a3c' }}
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>
