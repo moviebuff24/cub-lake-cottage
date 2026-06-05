@@ -115,7 +115,24 @@ export default function CubLakeCottage() {
   // YouTube background video — loop :04 to :18, muted, no controls
   useEffect(() => {
     const START = 4
+    const LOOP_AT = 17.5  // show mask and seek 0.5s before end to hide YouTube UI flash
     let player: any = null
+    let intervalId: ReturnType<typeof setInterval> | null = null
+
+    const showMask = () => {
+      const m = document.getElementById('yt-loop-mask') as HTMLElement | null
+      if (!m) return
+      m.style.transition = 'none'
+      m.style.opacity = '1'
+    }
+    const hideMask = () => {
+      const m = document.getElementById('yt-loop-mask') as HTMLElement | null
+      if (!m) return
+      setTimeout(() => {
+        m.style.transition = 'opacity 0.4s'
+        m.style.opacity = '0'
+      }, 150)
+    }
 
     const initPlayer = () => {
       player = new (window as any).YT.Player('yt-hero-player', {
@@ -133,11 +150,27 @@ export default function CubLakeCottage() {
           disablekb: 1,
         },
         events: {
-          onReady: (e: any) => e.target.playVideo(),
+          onReady: (e: any) => {
+            e.target.playVideo()
+            // Poll playback time — mask + seek before YouTube's ENDED fires
+            intervalId = setInterval(() => {
+              try {
+                if (e.target.getCurrentTime() >= LOOP_AT) {
+                  showMask()
+                  e.target.seekTo(START)
+                  e.target.playVideo()
+                  hideMask()
+                }
+              } catch {}
+            }, 100)
+          },
+          // Fallback: if ENDED fires anyway (e.g. tab backgrounded), restart cleanly
           onStateChange: (e: any) => {
-            if (e.data === 0) {  // ENDED — seek back to start of clip and replay
+            if (e.data === 0) {
+              showMask()
               e.target.seekTo(START)
               e.target.playVideo()
+              hideMask()
             }
           },
         },
@@ -162,6 +195,7 @@ export default function CubLakeCottage() {
 
     return () => {
       try { player?.destroy() } catch {}
+      if (intervalId) clearInterval(intervalId)
     }
   }, [])
 
@@ -429,8 +463,10 @@ export default function CubLakeCottage() {
           <div id="yt-hero-wrapper" className="absolute inset-0">
             <div id="yt-hero-player" />
           </div>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/20" />
+          {/* Loop mask — covers the brief YouTube UI flash during seek */}
+          <div id="yt-loop-mask" className="absolute inset-0 pointer-events-none" style={{ backgroundColor: '#111', opacity: 0, zIndex: 1 }} />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60" style={{ zIndex: 2 }} />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/30 via-transparent to-black/20" style={{ zIndex: 2 }} />
         </div>
 
         <div className="relative flex-1 flex flex-col px-6 pt-8 pb-16 md:px-12 lg:px-20">
