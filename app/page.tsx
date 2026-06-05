@@ -1246,7 +1246,7 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
 
   return (
     <div
-      className={`group p-5 rounded-2xl bg-background border-2 border-border hover:border-primary/30 transition-all hover:shadow-lg hover:-translate-y-0.5 ${
+      className={`group relative p-5 rounded-2xl bg-background border-2 border-border hover:border-primary/30 transition-all hover:shadow-lg hover:-translate-y-0.5 ${
         task.completed ? 'opacity-60' : ''
       }`}
       style={{ animationDelay: `${(groupIndex * 3 + index) * 50}ms` }}
@@ -1278,12 +1278,14 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
             )}
           </div>
         </div>
-        <div className="flex-shrink-0 text-right">
+        {/* Date — fades out on hover to make room for action icons */}
+        <div className="flex-shrink-0 text-right transition-opacity group-hover:opacity-0">
           <span className={`text-sm font-semibold ${task.completed ? 'text-muted-foreground' : ''}`} style={{ color: task.completed ? undefined : '#3d5a3c' }}>
             {task.dueDate}
           </span>
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Action icons — absolutely positioned so they don't push the date inward */}
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={(e) => { e.stopPropagation(); setShowNotes(s => !s) }}
             className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
@@ -1298,7 +1300,6 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
           >
             <X className="w-4 h-4" />
           </button>
-          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:translate-x-1 transition-all" />
         </div>
       </div>
       {/* Notes preview — visible when panel is closed and notes exist */}
