@@ -1145,22 +1145,51 @@ export default function CubLakeCottage() {
             </div>
             <div className="relative">
               <div className="aspect-[4/3] rounded-3xl bg-secondary border border-border overflow-hidden shadow-2xl">
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8">
-                  <div className="p-5 rounded-2xl bg-background shadow-sm">
-                    <ImageIcon className="w-10 h-10 text-muted-foreground" />
+                {visionPhotos.length > 0 ? (
+                  <div className="absolute inset-0 flex flex-col">
+                    <div className="flex-1 overflow-y-auto p-3">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {visionPhotos.map((photo) => (
+                          <div key={photo.id} className="relative group aspect-square rounded-xl overflow-hidden bg-muted">
+                            <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => removePhoto('vision', photo.id)}
+                              className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => triggerUpload('vision')}
+                          className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-2 transition-all hover:bg-card/80 group"
+                        >
+                          <div className="p-2 rounded-lg bg-background group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                            <Plus className="w-4 h-4" />
+                          </div>
+                          <span className="text-xs text-muted-foreground">Add photo</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-center">
-                    <p className="font-semibold text-lg mb-2">Add your vision board</p>
-                    <p className="text-sm text-muted-foreground">Upload inspiration photos and mockups</p>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8">
+                    <div className="p-5 rounded-2xl bg-background shadow-sm">
+                      <ImageIcon className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold text-lg mb-2">Add your vision board</p>
+                      <p className="text-sm text-muted-foreground">Upload photos that inspire your plans for the cottage</p>
+                    </div>
+                    <button
+                      onClick={() => triggerUpload('vision')}
+                      className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg"
+                      style={{ backgroundColor: '#3d5a3c', color: 'white' }}
+                    >
+                      Upload Photos
+                    </button>
                   </div>
-                  <button
-                    onClick={() => triggerUpload('vision')}
-                    className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg"
-                    style={{ backgroundColor: '#3d5a3c', color: 'white' }}
-                  >
-                    Upload Photos
-                  </button>
-                </div>
+                )}
               </div>
               {/* Decorative elements */}
               <div className="absolute -bottom-6 -right-6 w-32 h-32 rounded-full blur-2xl" style={{ backgroundColor: 'rgba(70, 130, 180, 0.3)' }} />
