@@ -106,6 +106,10 @@ export default function CubLakeCottage() {
   const [addSlotModal, setAddSlotModal] = useState<{ type: 'property' | 'inspiration' } | null>(null)
   const [newSlotLabel, setNewSlotLabel] = useState('')
   
+  // Debounce refs for drag-and-drop Firebase writes
+  const propertyOrderWriteRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inspirationOrderWriteRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // File input refs
   const propertyInputRef = useRef<HTMLInputElement>(null)
   const inspirationInputRef = useRef<HTMLInputElement>(null)
@@ -181,7 +185,7 @@ export default function CubLakeCottage() {
                   hideMask()
                 }
               } catch {}
-            }, 100)
+            }, 500)
           },
           // Fallback: if ENDED fires anyway (e.g. tab backgrounded), restart cleanly
           onStateChange: (e: any) => {
@@ -466,7 +470,10 @@ export default function CubLakeCottage() {
     if (from === -1 || to === -1) return
     const newOrder = arrayMove(allIds, from, to)
     setPropertyOrder(newOrder)
-    set(dbRef(db, 'photos/propertyOrder'), newOrder)
+    if (propertyOrderWriteRef.current) clearTimeout(propertyOrderWriteRef.current)
+    propertyOrderWriteRef.current = setTimeout(() => {
+      set(dbRef(db, 'photos/propertyOrder'), newOrder)
+    }, 400)
   }
 
   const handleInspirationDragEnd = (event: DragEndEvent) => {
@@ -483,7 +490,10 @@ export default function CubLakeCottage() {
     if (from === -1 || to === -1) return
     const newOrder = arrayMove(allIds, from, to)
     setInspirationOrder(newOrder)
-    set(dbRef(db, 'photos/inspirationOrder'), newOrder)
+    if (inspirationOrderWriteRef.current) clearTimeout(inspirationOrderWriteRef.current)
+    inspirationOrderWriteRef.current = setTimeout(() => {
+      set(dbRef(db, 'photos/inspirationOrder'), newOrder)
+    }, 400)
   }
 
   // Ordered tile arrays for rendering
