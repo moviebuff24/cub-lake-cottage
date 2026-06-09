@@ -99,6 +99,7 @@ export default function CubLakeCottage() {
   const [photosLoaded, setPhotosLoaded] = useState(false)
   const isFirebasePhotoUpdate = useRef(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [customPropertySlots, setCustomPropertySlots] = useState<Array<{ id: string; label: string }>>([])
   const [customInspirationSlots, setCustomInspirationSlots] = useState<Array<{ id: string; label: string }>>([])
   const [propertyOrder, setPropertyOrder] = useState<string[]>(['front', 'lake', 'dock', 'living', 'kitchen'])
@@ -373,6 +374,15 @@ export default function CubLakeCottage() {
     const file = e.target.files?.[0]
     if (!file || !activeUploadTarget) return
 
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setUploadError(`File too large — max 10 MB (this file is ${Math.round(file.size / 1024 / 1024)} MB)`)
+      setTimeout(() => setUploadError(null), 4000)
+      e.target.value = ''
+      setActiveUploadTarget(null)
+      return
+    }
+
     const target = activeUploadTarget
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
     const storagePath = `photos/${Date.now()}-${safeName}`
@@ -393,6 +403,8 @@ export default function CubLakeCottage() {
       }
     } catch (err) {
       console.error('Photo upload failed:', err)
+      setUploadError('Upload failed — please try again')
+      setTimeout(() => setUploadError(null), 4000)
     }
 
     setUploading(false)
@@ -1154,6 +1166,13 @@ export default function CubLakeCottage() {
         </div>
       </footer>
 
+      {/* Upload error toast */}
+      {uploadError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-5 py-3 rounded-full bg-destructive text-white text-sm font-medium shadow-lg whitespace-nowrap">
+          {uploadError}
+        </div>
+      )}
+
       {/* Add Task Modal */}
       {showAddTask && (
         <div
@@ -1161,10 +1180,14 @@ export default function CubLakeCottage() {
           onClick={() => setShowAddTask(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-task-title"
             className="bg-card rounded-2xl p-6 w-full max-w-md shadow-2xl border border-border"
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.key === 'Escape' && setShowAddTask(false)}
           >
-            <h3 className="font-serif text-xl font-medium mb-5">Add New Task</h3>
+            <h3 id="add-task-title" className="font-serif text-xl font-medium mb-5">Add New Task</h3>
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Task</label>
@@ -1250,10 +1273,14 @@ export default function CubLakeCottage() {
           onClick={() => setAddSlotModal(null)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-slot-title"
             className="bg-card rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-border"
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.key === 'Escape' && setAddSlotModal(null)}
           >
-            <h3 className="font-serif text-xl font-medium mb-2">
+            <h3 id="add-slot-title" className="font-serif text-xl font-medium mb-2">
               {addSlotModal.type === 'property' ? 'Add a photo spot' : 'Add inspiration'}
             </h3>
             <p className="text-sm text-muted-foreground mb-5">
@@ -1342,6 +1369,7 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
 }) {
   const [showNotes, setShowNotes] = useState(false)
   const [notesValue, setNotesValue] = useState(task.notes || '')
+  const [pendingDelete, setPendingDelete] = useState(false)
 
   const categoryStyles = {
     personal: { bg: 'rgba(61, 90, 60, 0.08)', text: '#3d5a3c', border: 'rgba(61, 90, 60, 0.2)', label: 'Personal' },
@@ -1393,20 +1421,41 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
         </div>
         {/* Action icons — absolutely positioned so they don't push the date inward */}
         <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowNotes(s => !s) }}
-            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
-            title={showNotes ? 'Hide notes' : 'Add / view notes'}
-          >
-            <MessageSquare className="w-4 h-4" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-            title="Delete task"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {!pendingDelete ? (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowNotes(s => !s) }}
+                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
+                title={showNotes ? 'Hide notes' : 'Add / view notes'}
+              >
+                <MessageSquare className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPendingDelete(true) }}
+                className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                title="Delete task"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-muted-foreground mr-1">Delete?</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete() }}
+                className="px-2 py-1 rounded-lg bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors"
+              >
+                Yes
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPendingDelete(false) }}
+                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
+                title="Cancel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
       {/* Notes preview — visible when panel is closed and notes exist */}
