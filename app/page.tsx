@@ -99,13 +99,20 @@ export default function CubLakeCottage() {
   const [photosLoaded, setPhotosLoaded] = useState(false)
   const isFirebasePhotoUpdate = useRef(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [customPropertySlots, setCustomPropertySlots] = useState<Array<{ id: string; label: string }>>([])
   const [customInspirationSlots, setCustomInspirationSlots] = useState<Array<{ id: string; label: string }>>([])
   const [propertyOrder, setPropertyOrder] = useState<string[]>(['front', 'lake', 'dock', 'living', 'kitchen'])
   const [inspirationOrder, setInspirationOrder] = useState<string[]>(['hottub', 'decor', 'firepit', 'dock'])
   const [addSlotModal, setAddSlotModal] = useState<{ type: 'property' | 'inspiration' } | null>(null)
   const [newSlotLabel, setNewSlotLabel] = useState('')
+  const [inspirationCaptions, setInspirationCaptions] = useState<Record<string, string>>({})
+  const captionWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
+  // Debounce refs for drag-and-drop Firebase writes
+  const propertyOrderWriteRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inspirationOrderWriteRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // File input refs
   const propertyInputRef = useRef<HTMLInputElement>(null)
   const inspirationInputRef = useRef<HTMLInputElement>(null)
@@ -181,7 +188,7 @@ export default function CubLakeCottage() {
                   hideMask()
                 }
               } catch {}
-            }, 100)
+            }, 500)
           },
           // Fallback: if ENDED fires anyway (e.g. tab backgrounded), restart cleanly
           onStateChange: (e: any) => {
@@ -276,6 +283,15 @@ export default function CubLakeCottage() {
     return () => unsubscribe()
   }, [])
 
+  // Subscribe to inspiration tile captions — separate path so main photo writes don't clobber them
+  useEffect(() => {
+    const captionsRef = dbRef(db, 'inspirationCaptions')
+    const unsubscribe = onValue(captionsRef, (snapshot) => {
+      setInspirationCaptions(snapshot.val() || {})
+    })
+    return () => unsubscribe()
+  }, [])
+
   // Write photo metadata to Firebase only when changed locally
   useEffect(() => {
     if (!photosLoaded) return
@@ -349,6 +365,17 @@ export default function CubLakeCottage() {
     ))
   }
 
+  const updateInspirationCaption = (id: string, caption: string) => {
+    setInspirationCaptions(prev => {
+      const next = { ...prev, [id]: caption }
+      if (captionWriteTimerRef.current) clearTimeout(captionWriteTimerRef.current)
+      captionWriteTimerRef.current = setTimeout(() => {
+        set(dbRef(db, 'inspirationCaptions'), next)
+      }, 800)
+      return next
+    })
+  }
+
   const addTask = () => {
     if (!newTask.title.trim()) return
     const task: Task = {
@@ -368,6 +395,15 @@ export default function CubLakeCottage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !activeUploadTarget) return
+
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setUploadError(`File too large — max 10 MB (this file is ${Math.round(file.size / 1024 / 1024)} MB)`)
+      setTimeout(() => setUploadError(null), 4000)
+      e.target.value = ''
+      setActiveUploadTarget(null)
+      return
+    }
 
     const target = activeUploadTarget
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -389,6 +425,8 @@ export default function CubLakeCottage() {
       }
     } catch (err) {
       console.error('Photo upload failed:', err)
+      setUploadError('Upload failed — please try again')
+      setTimeout(() => setUploadError(null), 4000)
     }
 
     setUploading(false)
@@ -466,7 +504,10 @@ export default function CubLakeCottage() {
     if (from === -1 || to === -1) return
     const newOrder = arrayMove(allIds, from, to)
     setPropertyOrder(newOrder)
-    set(dbRef(db, 'photos/propertyOrder'), newOrder)
+    if (propertyOrderWriteRef.current) clearTimeout(propertyOrderWriteRef.current)
+    propertyOrderWriteRef.current = setTimeout(() => {
+      set(dbRef(db, 'photos/propertyOrder'), newOrder)
+    }, 400)
   }
 
   const handleInspirationDragEnd = (event: DragEndEvent) => {
@@ -483,7 +524,10 @@ export default function CubLakeCottage() {
     if (from === -1 || to === -1) return
     const newOrder = arrayMove(allIds, from, to)
     setInspirationOrder(newOrder)
-    set(dbRef(db, 'photos/inspirationOrder'), newOrder)
+    if (inspirationOrderWriteRef.current) clearTimeout(inspirationOrderWriteRef.current)
+    inspirationOrderWriteRef.current = setTimeout(() => {
+      set(dbRef(db, 'photos/inspirationOrder'), newOrder)
+    }, 400)
   }
 
   // Ordered tile arrays for rendering
@@ -820,14 +864,19 @@ export default function CubLakeCottage() {
             </DndContext>
           </div>
 
-          {/* Inspiration board - Where it's headed */}
+          {/* Inspiration board — Mood Board */}
           <div>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-widest mb-6 flex items-center gap-3">
-              <span className="w-8 h-px bg-border" />
-              Where it&apos;s headed
-              <Sparkles className="w-4 h-4" style={{ color: '#d4a574' }} />
-              <span className="flex-1 h-px bg-border" />
-            </h3>
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-3">
+                <span className="w-8 h-px bg-border" />
+                Mood Board
+                <Sparkles className="w-4 h-4" style={{ color: '#d4a574' }} />
+                <span className="flex-1 h-px bg-border" />
+              </h3>
+              <p className="text-sm text-muted-foreground text-center mt-2">
+                Click any tile to pin an inspiration photo — add notes below each one
+              </p>
+            </div>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleInspirationDragEnd}>
               <SortableContext items={fullInspirationOrder} strategy={rectSortingStrategy}>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -837,56 +886,69 @@ export default function CubLakeCottage() {
                       lake: { bg: 'rgba(70, 130, 180, 0.12)', border: 'rgba(70, 130, 180, 0.3)', text: '#4682b4', hover: 'rgba(70, 130, 180, 0.2)' },
                       pine: { bg: 'rgba(61, 90, 60, 0.12)', border: 'rgba(61, 90, 60, 0.3)', text: '#3d5a3c', hover: 'rgba(61, 90, 60, 0.2)' },
                     }
-                    const colors = colorStyles[item.color as keyof typeof colorStyles]
+                    const colors = colorStyles[item.color as keyof typeof colorStyles] ?? colorStyles.lake
                     const photo = inspirationPhotos[item.id]
                     const isCustom = item.isCustom
                     return (
                       <SortablePhotoTile key={item.id} id={item.id}>
-                        <button
-                          onClick={() => triggerUpload('inspiration', item.id)}
-                          className="group relative aspect-[4/3] w-full rounded-2xl overflow-hidden border-2 transition-all hover:shadow-xl hover:-translate-y-1"
-                          style={{ backgroundColor: photo ? undefined : colors.bg, borderColor: colors.border }}
-                        >
-                          {photo ? (
-                            <>
-                              <img src={photo.url} alt={item.label} className="absolute inset-0 w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="text-white text-sm font-medium">Change photo</span>
-                              </div>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('inspiration', item.id) : removePhoto('inspiration', item.id) }}
-                                onPointerDown={e => e.stopPropagation()}
-                                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                              <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                                <span className="text-white text-xs font-medium">{item.label}</span>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="absolute inset-0 animate-shimmer" style={{ background: `linear-gradient(90deg, transparent 0%, ${colors.hover} 50%, transparent 100%)`, backgroundSize: '200% 100%' }} />
-                              </div>
-                              {isCustom && (
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); removeCustomSlot('inspiration', item.id) }}
-                                  onPointerDown={e => e.stopPropagation()}
-                                  className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              )}
-                              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                                <div className="p-4 rounded-2xl transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg" style={{ backgroundColor: colors.bg, color: colors.text }}>
-                                  <item.icon className="w-6 h-6" />
+                        <div>
+                          <button
+                            onClick={() => triggerUpload('inspiration', item.id)}
+                            className="group relative aspect-[4/3] w-full rounded-2xl overflow-hidden border-2 transition-all hover:shadow-xl hover:-translate-y-1"
+                            style={{ backgroundColor: photo ? undefined : colors.bg, borderColor: colors.border }}
+                          >
+                            {photo ? (
+                              <>
+                                <img src={photo.url} alt={item.label} className="absolute inset-0 w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <span className="text-white text-sm font-medium">Change photo</span>
                                 </div>
-                                <span className="text-sm font-semibold">{item.label}</span>
-                              </div>
-                            </>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('inspiration', item.id) : removePhoto('inspiration', item.id) }}
+                                  onPointerDown={e => e.stopPropagation()}
+                                  className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                                <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                                  <span className="text-white text-xs font-medium">{item.label}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <div className="absolute inset-0 animate-shimmer" style={{ background: `linear-gradient(90deg, transparent 0%, ${colors.hover} 50%, transparent 100%)`, backgroundSize: '200% 100%' }} />
+                                </div>
+                                {isCustom && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); removeCustomSlot('inspiration', item.id) }}
+                                    onPointerDown={e => e.stopPropagation()}
+                                    className="absolute top-2 right-2 p-1.5 rounded-full bg-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive z-10"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4">
+                                  <div className="p-3 rounded-2xl transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg" style={{ backgroundColor: colors.bg, color: colors.text }}>
+                                    <item.icon className="w-5 h-5" />
+                                  </div>
+                                  <span className="text-xs font-semibold text-center leading-tight">{item.label}</span>
+                                  <span className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">Tap to pin a photo</span>
+                                </div>
+                              </>
+                            )}
+                          </button>
+                          {photo && (
+                            <input
+                              type="text"
+                              value={inspirationCaptions[item.id] || ''}
+                              onChange={e => updateInspirationCaption(item.id, e.target.value)}
+                              onPointerDown={e => e.stopPropagation()}
+                              placeholder="Add a note…"
+                              className="w-full mt-1.5 px-2 py-1 text-xs bg-transparent rounded-lg border border-transparent hover:border-border focus:border-border focus:outline-none focus:ring-1 focus:ring-primary/30 text-foreground placeholder:text-muted-foreground/60 transition-colors"
+                            />
                           )}
-                        </button>
+                        </div>
                       </SortablePhotoTile>
                     )
                   })}
@@ -897,7 +959,7 @@ export default function CubLakeCottage() {
                     <div className="p-4 rounded-2xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                       <Plus className="w-6 h-6" />
                     </div>
-                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Inspo</span>
+                    <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">Add Category</span>
                   </button>
                 </div>
               </SortableContext>
@@ -1083,22 +1145,51 @@ export default function CubLakeCottage() {
             </div>
             <div className="relative">
               <div className="aspect-[4/3] rounded-3xl bg-secondary border border-border overflow-hidden shadow-2xl">
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8">
-                  <div className="p-5 rounded-2xl bg-background shadow-sm">
-                    <ImageIcon className="w-10 h-10 text-muted-foreground" />
+                {visionPhotos.length > 0 ? (
+                  <div className="absolute inset-0 flex flex-col">
+                    <div className="flex-1 overflow-y-auto p-3">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {visionPhotos.map((photo) => (
+                          <div key={photo.id} className="relative group aspect-square rounded-xl overflow-hidden bg-muted">
+                            <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => removePhoto('vision', photo.id)}
+                              className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => triggerUpload('vision')}
+                          className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-2 transition-all hover:bg-card/80 group"
+                        >
+                          <div className="p-2 rounded-lg bg-background group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                            <Plus className="w-4 h-4" />
+                          </div>
+                          <span className="text-xs text-muted-foreground">Add photo</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-center">
-                    <p className="font-semibold text-lg mb-2">Add your vision board</p>
-                    <p className="text-sm text-muted-foreground">Upload inspiration photos and mockups</p>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8">
+                    <div className="p-5 rounded-2xl bg-background shadow-sm">
+                      <ImageIcon className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold text-lg mb-2">Add your vision board</p>
+                      <p className="text-sm text-muted-foreground">Upload photos that inspire your plans for the cottage</p>
+                    </div>
+                    <button
+                      onClick={() => triggerUpload('vision')}
+                      className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg"
+                      style={{ backgroundColor: '#3d5a3c', color: 'white' }}
+                    >
+                      Upload Photos
+                    </button>
                   </div>
-                  <button
-                    onClick={() => triggerUpload('vision')}
-                    className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg"
-                    style={{ backgroundColor: '#3d5a3c', color: 'white' }}
-                  >
-                    Upload Photos
-                  </button>
-                </div>
+                )}
               </div>
               {/* Decorative elements */}
               <div className="absolute -bottom-6 -right-6 w-32 h-32 rounded-full blur-2xl" style={{ backgroundColor: 'rgba(70, 130, 180, 0.3)' }} />
@@ -1144,6 +1235,13 @@ export default function CubLakeCottage() {
         </div>
       </footer>
 
+      {/* Upload error toast */}
+      {uploadError && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] px-5 py-3 rounded-full bg-destructive text-white text-sm font-medium shadow-lg whitespace-nowrap">
+          {uploadError}
+        </div>
+      )}
+
       {/* Add Task Modal */}
       {showAddTask && (
         <div
@@ -1151,10 +1249,14 @@ export default function CubLakeCottage() {
           onClick={() => setShowAddTask(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-task-title"
             className="bg-card rounded-2xl p-6 w-full max-w-md shadow-2xl border border-border"
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.key === 'Escape' && setShowAddTask(false)}
           >
-            <h3 className="font-serif text-xl font-medium mb-5">Add New Task</h3>
+            <h3 id="add-task-title" className="font-serif text-xl font-medium mb-5">Add New Task</h3>
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Task</label>
@@ -1240,10 +1342,14 @@ export default function CubLakeCottage() {
           onClick={() => setAddSlotModal(null)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-slot-title"
             className="bg-card rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-border"
             onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.key === 'Escape' && setAddSlotModal(null)}
           >
-            <h3 className="font-serif text-xl font-medium mb-2">
+            <h3 id="add-slot-title" className="font-serif text-xl font-medium mb-2">
               {addSlotModal.type === 'property' ? 'Add a photo spot' : 'Add inspiration'}
             </h3>
             <p className="text-sm text-muted-foreground mb-5">
@@ -1332,6 +1438,7 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
 }) {
   const [showNotes, setShowNotes] = useState(false)
   const [notesValue, setNotesValue] = useState(task.notes || '')
+  const [pendingDelete, setPendingDelete] = useState(false)
 
   const categoryStyles = {
     personal: { bg: 'rgba(61, 90, 60, 0.08)', text: '#3d5a3c', border: 'rgba(61, 90, 60, 0.2)', label: 'Personal' },
@@ -1383,20 +1490,41 @@ function TaskCard({ task, index, groupIndex, onToggle, onDelete, onUpdateNotes }
         </div>
         {/* Action icons — absolutely positioned so they don't push the date inward */}
         <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => { e.stopPropagation(); setShowNotes(s => !s) }}
-            className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
-            title={showNotes ? 'Hide notes' : 'Add / view notes'}
-          >
-            <MessageSquare className="w-4 h-4" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-            title="Delete task"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {!pendingDelete ? (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowNotes(s => !s) }}
+                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
+                title={showNotes ? 'Hide notes' : 'Add / view notes'}
+              >
+                <MessageSquare className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPendingDelete(true) }}
+                className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                title="Delete task"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="text-xs text-muted-foreground mr-1">Delete?</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete() }}
+                className="px-2 py-1 rounded-lg bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors"
+              >
+                Yes
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPendingDelete(false) }}
+                className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
+                title="Cancel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
       {/* Notes preview — visible when panel is closed and notes exist */}
