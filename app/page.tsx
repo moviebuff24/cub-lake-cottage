@@ -34,6 +34,7 @@ import {
   Menu,
 } from 'lucide-react'
 import { type Task, initialTasks, MONTHS_ORDER } from '@/lib/tasks'
+import { LakeReport } from '@/components/lake-report'
 
 // Data
 const FIRST_STAY = new Date('2026-08-01')
@@ -122,7 +123,7 @@ export default function CubLakeCottage() {
   // Computed values
   const completedCount = tasks.filter(t => t.completed).length
   const totalCount = tasks.length
-  const progressPercent = Math.round((completedCount / totalCount) * 100)
+  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
 
   useEffect(() => {
     setMounted(true)
@@ -588,6 +589,7 @@ export default function CubLakeCottage() {
             <nav className="flex flex-col gap-1">
               {[
                 { label: 'The Property', id: 'property' },
+                { label: 'Lake Report', id: 'weather' },
                 { label: 'Progress', id: 'progress' },
                 { label: 'Notes', id: 'notes' },
                 { label: 'Vision', id: 'vision' },
@@ -665,6 +667,7 @@ export default function CubLakeCottage() {
             {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-8 text-sm">
               <button onClick={() => scrollToSection('property')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">The Property</button>
+              <button onClick={() => scrollToSection('weather')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Lake Report</button>
               <button onClick={() => scrollToSection('progress')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Progress</button>
               <button onClick={() => scrollToSection('notes')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Notes</button>
               <button onClick={() => scrollToSection('vision')} className="opacity-70 hover:opacity-100 transition-all hover:tracking-wide">Vision</button>
@@ -967,6 +970,9 @@ export default function CubLakeCottage() {
           </div>
         </div>
       </section>
+
+      {/* Lake Report — live weather at the cottage */}
+      <LakeReport />
 
       {/* Tasks Section */}
       <section id="progress" className="px-6 py-20 md:px-12 lg:px-20 bg-card relative overflow-hidden">
