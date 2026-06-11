@@ -123,7 +123,7 @@ export default function CubLakeCottage() {
   // Computed values
   const completedCount = tasks.filter(t => t.completed).length
   const totalCount = tasks.length
-  const progressPercent = Math.round((completedCount / totalCount) * 100)
+  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
 
   useEffect(() => {
     setMounted(true)
