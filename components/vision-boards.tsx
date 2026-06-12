@@ -1,0 +1,166 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { ref as dbRef, onValue, set, remove, get } from 'firebase/database'
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { db, storage } from '@/lib/firebase'
+import { Plus, X, Link as LinkIcon, Loader2 } from 'lucide-react'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface VisionPhoto {
+  id: string
+  url: string
+  name: string
+  storagePath: string
+}
+
+interface VisionLink {
+  id: string
+  url: string
+  title: string
+  description: string
+  thumbnail: string
+}
+
+interface VisionBoard {
+  id: string
+  label: string
+  order: number
+  notes: string
+  photos: VisionPhoto[]
+  links: VisionLink[]
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function parseBoards(data: Record<string, unknown>): VisionBoard[] {
+  return Object.values(data)
+    .map((b: unknown) => {
+      const board = b as Record<string, unknown>
+      return {
+        id: board.id as string,
+        label: board.label as string,
+        order: (board.order as number) ?? 0,
+        notes: (board.notes as string) ?? '',
+        photos: board.photos
+          ? (Object.values(board.photos as Record<string, unknown>) as VisionPhoto[])
+          : [],
+        links: board.links
+          ? (Object.values(board.links as Record<string, unknown>) as VisionLink[])
+          : [],
+      }
+    })
+    .sort((a, b) => a.order - b.order)
+}
+
+// ─── BoardTile (placeholder — expanded in later tasks) ────────────────────────
+
+function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: string) => void }) {
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <span className="font-semibold text-sm">{board.label}</span>
+        <button
+          onClick={() => onDelete(board.id)}
+          className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+        >
+          Delete
+        </button>
+      </div>
+      <div className="p-4 text-sm text-muted-foreground">{board.photos.length} photos · {board.links.length} links</div>
+    </div>
+  )
+}
+
+// ─── VisionBoards ─────────────────────────────────────────────────────────────
+
+export function VisionBoards() {
+  const [boards, setBoards] = useState<VisionBoard[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newBoardLabel, setNewBoardLabel] = useState('')
+  const newBoardInputRef = useRef<HTMLInputElement>(null)
+
+  // Subscribe to visionBoards in Firebase
+  useEffect(() => {
+    const boardsRef = dbRef(db, 'visionBoards')
+    const unsub = onValue(boardsRef, (snapshot) => {
+      const data = snapshot.val()
+      setBoards(data ? parseBoards(data) : [])
+      setLoaded(true)
+    })
+    return unsub
+  }, [])
+
+  const handleDeleteBoard = async (boardId: string) => {
+    const board = boards.find(b => b.id === boardId)
+    if (!board) return
+    // Delete all photos from Storage
+    await Promise.allSettled(
+      board.photos.map(p => deleteObject(storageRef(storage, p.storagePath)))
+    )
+    // Remove board from RTDB
+    await remove(dbRef(db, `visionBoards/${boardId}`))
+  }
+
+  if (!loaded) return null
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {boards.map(board => (
+        <BoardTile key={board.id} board={board} onDelete={handleDeleteBoard} />
+      ))}
+      {/* Add board tile */}
+      <button
+        onClick={() => { setShowAddModal(true); setTimeout(() => newBoardInputRef.current?.focus(), 50) }}
+        className="group border-2 border-dashed border-border hover:border-primary/50 rounded-2xl flex flex-col items-center justify-center gap-3 min-h-[200px] transition-all hover:bg-secondary/30"
+      >
+        <div className="p-3 rounded-xl bg-secondary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+          <Plus className="w-5 h-5" />
+        </div>
+        <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+          Add board
+        </span>
+      </button>
+
+      {/* Add board modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowAddModal(false)}>
+          <div className="bg-card rounded-2xl p-6 shadow-2xl w-full max-w-sm mx-4" onClick={e => e.stopPropagation()} onKeyDown={e => e.key === 'Escape' && setShowAddModal(false)}>
+            <h3 className="font-semibold text-base mb-1">New board</h3>
+            <p className="text-sm text-muted-foreground mb-4">Give it a name — you can rename it later</p>
+            <input
+              ref={newBoardInputRef}
+              type="text"
+              value={newBoardLabel}
+              onChange={e => setNewBoardLabel(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmAddBoard()}
+              placeholder="e.g. Hot Tub Inspo, Decor…"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowAddModal(false)} className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary transition-colors">Cancel</button>
+              <button onClick={confirmAddBoard} disabled={!newBoardLabel.trim()} className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-colors" style={{ backgroundColor: '#3d5a3c', color: 'white' }}>Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  function confirmAddBoard() {
+    if (!newBoardLabel.trim()) return
+    const id = `board_${Date.now()}`
+    set(dbRef(db, `visionBoards/${id}`), {
+      id,
+      label: newBoardLabel.trim(),
+      order: boards.length,
+      notes: '',
+      photos: {},
+      links: {},
+    })
+    setNewBoardLabel('')
+    setShowAddModal(false)
+  }
+}
