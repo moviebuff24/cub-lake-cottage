@@ -333,9 +333,31 @@ export function VisionBoards() {
   // Subscribe to visionBoards in Firebase
   useEffect(() => {
     const boardsRef = dbRef(db, 'visionBoards')
-    const unsub = onValue(boardsRef, (snapshot) => {
+    const unsub = onValue(boardsRef, async (snapshot) => {
       const data = snapshot.val()
-      setBoards(data ? parseBoards(data) : [])
+
+      // Migration: if no boards exist yet but old visionPhotos data does, move it to a default board
+      if (!data) {
+        const oldPhotosSnap = await get(dbRef(db, 'photos/visionPhotos'))
+        const oldPhotos = oldPhotosSnap.val()
+        if (oldPhotos && Object.keys(oldPhotos).length > 0) {
+          const boardId = `board_${Date.now()}`
+          await set(dbRef(db, `visionBoards/${boardId}`), {
+            id: boardId,
+            label: 'Vision Board',
+            order: 0,
+            notes: '',
+            photos: oldPhotos, // already keyed by id, same shape
+            links: {},
+          })
+          // Don't touch photos/visionPhotos — non-destructive migration
+        }
+        setBoards([])
+        setLoaded(true)
+        return
+      }
+
+      setBoards(parseBoards(data))
       setLoaded(true)
     })
     return unsub
