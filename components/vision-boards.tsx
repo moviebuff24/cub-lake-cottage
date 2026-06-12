@@ -146,6 +146,20 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
     await remove(dbRef(db, `visionBoards/${board.id}/links/${linkId}`))
   }
 
+  const [notes, setNotes] = useState(board.notes || '')
+  const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Keep notes in sync if Firebase pushes an update while not editing
+  useEffect(() => { setNotes(board.notes || '') }, [board.notes])
+
+  const handleNotesChange = (value: string) => {
+    setNotes(value)
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
+    notesTimerRef.current = setTimeout(() => {
+      set(dbRef(db, `visionBoards/${board.id}/notes`), value)
+    }, 800)
+  }
+
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col relative">
       {/* Header */}
@@ -279,6 +293,18 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
             : <button onClick={() => doAddLink(linkInput)} disabled={!linkInput.trim()} className="text-xs font-medium text-primary disabled:opacity-30 hover:underline flex-shrink-0">Add</button>
           }
         </div>
+      </div>
+
+      {/* Notes */}
+      <div className="px-3 pb-4 border-t border-border mt-1 pt-2">
+        <p className="text-[0.63rem] font-bold tracking-widest uppercase text-muted-foreground mb-1">Notes</p>
+        <textarea
+          value={notes}
+          onChange={e => handleNotesChange(e.target.value)}
+          placeholder="Add notes…"
+          rows={2}
+          className="w-full bg-transparent border-none outline-none text-sm text-muted-foreground italic resize-none placeholder:text-muted-foreground/50 leading-relaxed"
+        />
       </div>
 
       {/* Delete confirmation overlay */}
