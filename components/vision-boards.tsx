@@ -96,12 +96,16 @@ export function VisionBoards() {
   const handleDeleteBoard = async (boardId: string) => {
     const board = boards.find(b => b.id === boardId)
     if (!board) return
-    // Delete all photos from Storage
-    await Promise.allSettled(
-      board.photos.map(p => deleteObject(storageRef(storage, p.storagePath)))
-    )
-    // Remove board from RTDB
-    await remove(dbRef(db, `visionBoards/${boardId}`))
+    try {
+      // Delete all photos from Storage
+      await Promise.allSettled(
+        board.photos.map(p => deleteObject(storageRef(storage, p.storagePath)))
+      )
+      // Remove board from RTDB
+      await remove(dbRef(db, `visionBoards/${boardId}`))
+    } catch (err) {
+      console.error('Failed to delete board:', err)
+    }
   }
 
   if (!loaded) return null
