@@ -35,6 +35,7 @@ import {
 } from 'lucide-react'
 import { type Task, initialTasks, MONTHS_ORDER } from '@/lib/tasks'
 import { LakeReport } from '@/components/lake-report'
+import { VisionBoards } from '@/components/vision-boards'
 
 // Data
 const FIRST_STAY = new Date('2026-08-01')
@@ -96,8 +97,7 @@ export default function CubLakeCottage() {
   // Photo states — synced via Firebase RTDB (metadata) + Firebase Storage (files)
   const [propertyPhotos, setPropertyPhotos] = useState<Record<string, PhotoUpload | null>>({ front: null, lake: null, dock: null, living: null, kitchen: null })
   const [inspirationPhotos, setInspirationPhotos] = useState<Record<string, PhotoUpload | null>>({ hottub: null, decor: null, firepit: null, dock: null })
-  const [visionPhotos, setVisionPhotos] = useState<PhotoUpload[]>([])
-  const [photosLoaded, setPhotosLoaded] = useState(false)
+const [photosLoaded, setPhotosLoaded] = useState(false)
   const isFirebasePhotoUpdate = useRef(false)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -117,8 +117,7 @@ export default function CubLakeCottage() {
   // File input refs
   const propertyInputRef = useRef<HTMLInputElement>(null)
   const inspirationInputRef = useRef<HTMLInputElement>(null)
-  const visionInputRef = useRef<HTMLInputElement>(null)
-  const [activeUploadTarget, setActiveUploadTarget] = useState<{ type: 'property' | 'inspiration' | 'vision'; id?: string } | null>(null)
+  const [activeUploadTarget, setActiveUploadTarget] = useState<{ type: 'property' | 'inspiration'; id?: string } | null>(null)
 
   // Computed values
   const completedCount = tasks.filter(t => t.completed).length
@@ -273,8 +272,7 @@ export default function CubLakeCottage() {
       if (data) {
         setPropertyPhotos(data.propertyPhotos || { front: null, lake: null, dock: null, living: null, kitchen: null })
         setInspirationPhotos(data.inspirationPhotos || { hottub: null, decor: null, firepit: null, dock: null })
-        setVisionPhotos(data.visionPhotos ? Object.values(data.visionPhotos) as PhotoUpload[] : [])
-        setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPropertySlots) as Array<{ id: string; label: string }> : [])
+setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPropertySlots) as Array<{ id: string; label: string }> : [])
         setCustomInspirationSlots(data.customInspirationSlots ? Object.values(data.customInspirationSlots) as Array<{ id: string; label: string }> : [])
         if (data.propertyOrder?.length) setPropertyOrder(data.propertyOrder)
         if (data.inspirationOrder?.length) setInspirationOrder(data.inspirationOrder)
@@ -300,8 +298,8 @@ export default function CubLakeCottage() {
       isFirebasePhotoUpdate.current = false
       return
     }
-    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder })
-  }, [propertyPhotos, inspirationPhotos, visionPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder, photosLoaded])
+    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder })
+  }, [propertyPhotos, inspirationPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder, photosLoaded])
 
   // Subscribe to shared scratchpad
   useEffect(() => {
@@ -421,8 +419,6 @@ export default function CubLakeCottage() {
         setPropertyPhotos(prev => ({ ...prev, [target.id!]: upload }))
       } else if (target.type === 'inspiration' && target.id) {
         setInspirationPhotos(prev => ({ ...prev, [target.id!]: upload }))
-      } else if (target.type === 'vision') {
-        setVisionPhotos(prev => [...prev, upload])
       }
     } catch (err) {
       console.error('Photo upload failed:', err)
@@ -435,14 +431,13 @@ export default function CubLakeCottage() {
     e.target.value = ''
   }
 
-  const triggerUpload = (type: 'property' | 'inspiration' | 'vision', id?: string) => {
+  const triggerUpload = (type: 'property' | 'inspiration', id?: string) => {
     setActiveUploadTarget({ type, id })
     if (type === 'property') propertyInputRef.current?.click()
     else if (type === 'inspiration') inspirationInputRef.current?.click()
-    else visionInputRef.current?.click()
   }
 
-  const removePhoto = (type: 'property' | 'inspiration' | 'vision', id: string) => {
+  const removePhoto = (type: 'property' | 'inspiration', id: string) => {
     let photo: PhotoUpload | null | undefined
 
     if (type === 'property') {
@@ -451,9 +446,6 @@ export default function CubLakeCottage() {
     } else if (type === 'inspiration') {
       photo = inspirationPhotos[id]
       setInspirationPhotos(prev => ({ ...prev, [id]: null }))
-    } else {
-      photo = visionPhotos.find(p => p.id === id)
-      setVisionPhotos(prev => prev.filter(p => p.id !== id))
     }
 
     if (photo?.storagePath) {
@@ -559,8 +551,6 @@ export default function CubLakeCottage() {
       {/* Hidden file inputs */}
       <input type="file" ref={propertyInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
       <input type="file" ref={inspirationInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
-      <input type="file" ref={visionInputRef} className="hidden" accept="image/*" onChange={handleFileUpload} />
-      
       {/* Mobile navigation menu */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
@@ -1112,104 +1102,25 @@ export default function CubLakeCottage() {
 
       {/* Vision Section */}
       <section id="vision" className="px-6 py-20 md:px-12 lg:px-20 relative overflow-hidden">
-        {/* Decorative background */}
         <div className="absolute top-0 right-0 w-1/2 h-full opacity-50 pointer-events-none">
           <div className="absolute top-20 right-20 w-64 h-64 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(70, 130, 180, 0.15)' }} />
           <div className="absolute bottom-40 right-40 w-48 h-48 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(212, 165, 116, 0.15)' }} />
         </div>
-        
         <div className="max-w-6xl mx-auto relative">
-          <div className="grid md:grid-cols-2 gap-16 items-center">
-            <div>
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary text-sm font-medium mb-6">
-                <Sparkles className="w-4 h-4" style={{ color: '#d4a574' }} />
-                <span>The Vision</span>
-              </div>
-              <h2 className="font-serif text-4xl md:text-5xl font-medium mb-8 text-balance leading-tight">
-                This is just the <span className="italic">beginning</span>
-              </h2>
-              <p className="text-muted-foreground text-lg leading-relaxed mb-8">
-                Every great adventure starts with a single step. Our cottage on Cub Lake 
-                represents more than just a property — it&apos;s where memories will be made, 
-                where mornings start with lake views, and where life slows down just enough 
-                to really be enjoyed.
-              </p>
-              <div className="flex flex-wrap gap-4">
-                <div className="flex items-center gap-3 text-sm bg-card px-4 py-2 rounded-full border border-border">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#3d5a3c' }} />
-                  <span className="font-medium">Renovations</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm bg-card px-4 py-2 rounded-full border border-border">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#4682b4' }} />
-                  <span className="font-medium">Lake Life</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm bg-card px-4 py-2 rounded-full border border-border">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#d4a574' }} />
-                  <span className="font-medium">Short-term Rental</span>
-                </div>
-              </div>
-            </div>
-            <div className="relative">
-              <div className="aspect-[4/3] rounded-3xl bg-secondary border border-border overflow-hidden shadow-2xl">
-                {visionPhotos.length > 0 ? (
-                  <div className="absolute inset-0 flex flex-col">
-                    <div className="flex-1 overflow-y-auto p-3">
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {visionPhotos.map((photo) => (
-                          <div key={photo.id} className="relative group aspect-square rounded-xl overflow-hidden bg-muted">
-                            <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
-                            <button
-                              onClick={() => removePhoto('vision', photo.id)}
-                              className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          onClick={() => triggerUpload('vision')}
-                          className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-2 transition-all hover:bg-card/80 group"
-                        >
-                          <div className="p-2 rounded-lg bg-background group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                            <Plus className="w-4 h-4" />
-                          </div>
-                          <span className="text-xs text-muted-foreground">Add photo</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 p-8">
-                    <div className="p-5 rounded-2xl bg-background shadow-sm">
-                      <ImageIcon className="w-10 h-10 text-muted-foreground" />
-                    </div>
-                    <div className="text-center">
-                      <p className="font-semibold text-lg mb-2">Add your vision board</p>
-                      <p className="text-sm text-muted-foreground">Upload photos that inspire your plans for the cottage</p>
-                    </div>
-                    <button
-                      onClick={() => triggerUpload('vision')}
-                      className="mt-2 px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all hover:shadow-lg"
-                      style={{ backgroundColor: '#3d5a3c', color: 'white' }}
-                    >
-                      Upload Photos
-                    </button>
-                  </div>
-                )}
-              </div>
-              {/* Decorative elements */}
-              <div className="absolute -bottom-6 -right-6 w-32 h-32 rounded-full blur-2xl" style={{ backgroundColor: 'rgba(70, 130, 180, 0.3)' }} />
-              <div className="absolute -top-6 -left-6 w-24 h-24 rounded-full blur-xl" style={{ backgroundColor: 'rgba(212, 165, 116, 0.3)' }} />
-              {/* Corner accent */}
-              <div className="absolute -top-3 -right-3 w-24 h-24">
-                <svg viewBox="0 0 100 100" className="w-full h-full" style={{ color: '#d4a574' }}>
-                  <circle cx="80" cy="20" r="3" fill="currentColor" opacity="0.6" />
-                  <circle cx="90" cy="35" r="2" fill="currentColor" opacity="0.4" />
-                  <circle cx="70" cy="10" r="2" fill="currentColor" opacity="0.3" />
-                </svg>
-              </div>
-            </div>
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary text-sm font-medium mb-6">
+            <Sparkles className="w-4 h-4" style={{ color: '#d4a574' }} />
+            <span>The Vision</span>
           </div>
+          <h2 className="font-serif text-4xl md:text-5xl font-medium mb-4 text-balance leading-tight">
+            This is just the <span className="italic">beginning</span>
+          </h2>
+          <p className="text-muted-foreground text-lg leading-relaxed mb-10">
+            Every great adventure starts with a single step. Our cottage on Cub Lake
+            represents more than just a property — it&apos;s where memories will be made,
+            where mornings start with lake views, and where life slows down just enough
+            to really be enjoyed.
+          </p>
+          <VisionBoards />
         </div>
       </section>
 
