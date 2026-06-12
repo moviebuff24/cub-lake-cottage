@@ -27,6 +27,10 @@ export async function POST(request: NextRequest) {
     })
     clearTimeout(timeout)
 
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
     const html = await response.text()
 
     // Try both attribute orderings for og: meta tags
