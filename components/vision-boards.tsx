@@ -104,6 +104,48 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
     }
   }
 
+  const [linkInput, setLinkInput] = useState('')
+  const [linkLoading, setLinkLoading] = useState(false)
+
+  // Takes url directly so both the button click and onPaste can call it
+  // without depending on linkInput state (which lags one render on paste)
+  const doAddLink = async (url: string) => {
+    const trimmed = url.trim()
+    if (!trimmed) return
+    setLinkInput('')
+    setLinkLoading(true)
+    try {
+      const res = await fetch('/api/link-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      })
+      const preview = await res.json()
+      const linkId = `link_${Date.now()}`
+      let hostname = trimmed
+      try { hostname = new URL(trimmed).hostname } catch {}
+      await set(dbRef(db, `visionBoards/${board.id}/links/${linkId}`), {
+        id: linkId,
+        url: trimmed,
+        title: preview.title || hostname,
+        description: preview.description || '',
+        thumbnail: preview.thumbnail || '',
+      })
+    } catch {
+      const linkId = `link_${Date.now()}`
+      let hostname = trimmed
+      try { hostname = new URL(trimmed).hostname } catch {}
+      await set(dbRef(db, `visionBoards/${board.id}/links/${linkId}`), {
+        id: linkId, url: trimmed, title: hostname, description: '', thumbnail: '',
+      })
+    }
+    setLinkLoading(false)
+  }
+
+  const handleRemoveLink = async (linkId: string) => {
+    await remove(dbRef(db, `visionBoards/${board.id}/links/${linkId}`))
+  }
+
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col relative">
       {/* Header */}
@@ -177,6 +219,66 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
           }
         </button>
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+      </div>
+
+      {/* Links */}
+      <div className="px-3 pb-2 flex flex-col gap-1.5">
+        <p className="text-[0.63rem] font-bold tracking-widest uppercase text-muted-foreground pt-1">Links</p>
+
+        {board.links.map(link => (
+          <div key={link.id} className="flex items-stretch bg-secondary/50 border border-border rounded-xl overflow-hidden group">
+            {/* Thumbnail */}
+            {link.thumbnail ? (
+              <img src={link.thumbnail} alt="" className="w-[72px] flex-shrink-0 object-cover" />
+            ) : (
+              <div className="w-[72px] flex-shrink-0 bg-secondary flex items-center justify-center text-muted-foreground">
+                <LinkIcon className="w-4 h-4" />
+              </div>
+            )}
+            {/* Text */}
+            <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 px-3 py-2 hover:bg-secondary/80 transition-colors">
+              <p className="text-[0.62rem] text-muted-foreground flex items-center gap-1 mb-0.5">
+                {/* Google favicon service */}
+                <img src={`https://www.google.com/s2/favicons?domain=${new URL(link.url).hostname}&sz=16`} alt="" className="w-3.5 h-3.5 rounded-sm" />
+                {new URL(link.url).hostname}
+              </p>
+              <p className="text-[0.78rem] font-semibold text-foreground leading-tight line-clamp-1">{link.title}</p>
+              {link.description && (
+                <p className="text-[0.67rem] text-muted-foreground leading-snug line-clamp-2 mt-0.5">{link.description}</p>
+              )}
+            </a>
+            {/* Remove */}
+            <button
+              onClick={() => handleRemoveLink(link.id)}
+              className="self-start mt-2 mr-2 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+
+        {/* Add link input */}
+        <div className="flex items-center gap-2">
+          <input
+            type="url"
+            value={linkInput}
+            onChange={e => setLinkInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && doAddLink(linkInput)}
+            onPaste={e => {
+              const pasted = e.clipboardData.getData('text')
+              if (pasted.startsWith('http')) {
+                e.preventDefault()
+                doAddLink(pasted)
+              }
+            }}
+            placeholder="Paste a URL…"
+            className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary/30 placeholder:text-muted-foreground/60"
+          />
+          {linkLoading
+            ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground flex-shrink-0" />
+            : <button onClick={() => doAddLink(linkInput)} disabled={!linkInput.trim()} className="text-xs font-medium text-primary disabled:opacity-30 hover:underline flex-shrink-0">Add</button>
+          }
+        </div>
       </div>
 
       {/* Delete confirmation overlay */}
