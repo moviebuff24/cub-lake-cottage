@@ -62,6 +62,8 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
   const [showMenu, setShowMenu] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const labelInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Keep local label in sync if Firebase pushes an update
   useEffect(() => { setLabel(board.label) }, [board.label])
@@ -73,6 +75,32 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
       set(dbRef(db, `visionBoards/${board.id}/label`), trimmed)
     } else {
       setLabel(board.label) // revert if empty
+    }
+  }
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const photoId = `photo_${Date.now()}`
+    const path = `visionBoards/${board.id}/photos/${photoId}_${file.name}`
+    try {
+      const snapshot = await uploadBytes(storageRef(storage, path), file)
+      const url = await getDownloadURL(snapshot.ref)
+      await set(dbRef(db, `visionBoards/${board.id}/photos/${photoId}`), {
+        id: photoId, url, name: file.name, storagePath: path,
+      })
+    } catch (err) {
+      console.error('Photo upload failed:', err)
+    }
+    setUploading(false)
+    e.target.value = ''
+  }
+
+  const handleRemovePhoto = async (photo: VisionPhoto) => {
+    await remove(dbRef(db, `visionBoards/${board.id}/photos/${photo.id}`))
+    if (photo.storagePath) {
+      deleteObject(storageRef(storage, photo.storagePath)).catch(() => {})
     }
   }
 
@@ -124,9 +152,31 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
         </div>
       </div>
 
-      {/* Body — photo grid, links, notes added in later tasks */}
-      <div className="p-4 text-sm text-muted-foreground flex-1">
-        {board.photos.length} photos · {board.links.length} links
+      {/* Photo grid */}
+      <div className="p-3 grid grid-cols-3 gap-1.5">
+        {board.photos.map(photo => (
+          <div key={photo.id} className="relative group aspect-[4/3] rounded-lg overflow-hidden bg-secondary">
+            <img src={photo.url} alt={photo.name} className="w-full h-full object-cover" />
+            <button
+              onClick={() => handleRemovePhoto(photo)}
+              className="absolute top-1 right-1 p-0.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+        {/* Upload tile */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="aspect-[4/3] rounded-lg border-2 border-dashed border-border hover:border-primary/50 flex flex-col items-center justify-center gap-1 transition-all hover:bg-secondary/50 group"
+        >
+          {uploading
+            ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+            : <Plus className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+          }
+        </button>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
       </div>
 
       {/* Delete confirmation overlay */}
