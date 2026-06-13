@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { DM_Sans, Fraunces } from 'next/font/google'
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { AuthGate } from '@/components/auth-gate'
 
 const dmSans = DM_Sans({
   subsets: ['latin'],
@@ -52,7 +53,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${dmSans.variable} ${fraunces.variable} bg-background`}>
       <body className="font-sans antialiased">
-        {children}
+        <AuthGate>{children}</AuthGate>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
