@@ -239,7 +239,10 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
       <div className="px-3 pb-2 flex flex-col gap-1.5">
         <p className="text-[0.63rem] font-bold tracking-widest uppercase text-muted-foreground pt-1">Links</p>
 
-        {board.links.map(link => (
+        {board.links.map(link => {
+          let hostname = link.url
+          try { hostname = new URL(link.url).hostname } catch {}
+          return (
           <div key={link.id} className="flex items-stretch bg-secondary/50 border border-border rounded-xl overflow-hidden group">
             {/* Thumbnail */}
             {link.thumbnail ? (
@@ -253,8 +256,8 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
             <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 px-3 py-2 hover:bg-secondary/80 transition-colors">
               <p className="text-[0.62rem] text-muted-foreground flex items-center gap-1 mb-0.5">
                 {/* Google favicon service */}
-                <img src={`https://www.google.com/s2/favicons?domain=${new URL(link.url).hostname}&sz=16`} alt="" className="w-3.5 h-3.5 rounded-sm" />
-                {new URL(link.url).hostname}
+                <img src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=16`} alt="" className="w-3.5 h-3.5 rounded-sm" />
+                {hostname}
               </p>
               <p className="text-[0.78rem] font-semibold text-foreground leading-tight line-clamp-1">{link.title}</p>
               {link.description && (
@@ -269,7 +272,7 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-        ))}
+        )})}
 
         {/* Add link input */}
         <div className="flex items-center gap-2">
@@ -333,25 +336,25 @@ export function VisionBoards() {
   // Subscribe to visionBoards in Firebase
   useEffect(() => {
     const boardsRef = dbRef(db, 'visionBoards')
-    const unsub = onValue(boardsRef, async (snapshot) => {
+    const unsub = onValue(boardsRef, (snapshot) => {
       const data = snapshot.val()
 
-      // Migration: if no boards exist yet but old visionPhotos data does, move it to a default board
       if (!data) {
-        const oldPhotosSnap = await get(dbRef(db, 'photos/visionPhotos'))
-        const oldPhotos = oldPhotosSnap.val()
-        if (oldPhotos && Object.keys(oldPhotos).length > 0) {
-          const boardId = `board_${Date.now()}`
-          await set(dbRef(db, `visionBoards/${boardId}`), {
-            id: boardId,
-            label: 'Vision Board',
-            order: 0,
-            notes: '',
-            photos: oldPhotos, // already keyed by id, same shape
-            links: {},
-          })
-          // Don't touch photos/visionPhotos — non-destructive migration
-        }
+        // Migration: if no boards exist yet but old visionPhotos data does, move it to a default board
+        get(dbRef(db, 'photos/visionPhotos')).then((oldPhotosSnap) => {
+          const oldPhotos = oldPhotosSnap.val()
+          if (oldPhotos && Object.keys(oldPhotos).length > 0) {
+            const boardId = `board_${Date.now()}`
+            set(dbRef(db, `visionBoards/${boardId}`), {
+              id: boardId,
+              label: 'Vision Board',
+              order: 0,
+              notes: '',
+              photos: oldPhotos,
+              links: {},
+            }).catch(err => console.error('Migration failed:', err))
+          }
+        }).catch(err => console.error('Migration read failed:', err))
         setBoards([])
         setLoaded(true)
         return

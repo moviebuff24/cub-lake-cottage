@@ -244,7 +244,7 @@ const [photosLoaded, setPhotosLoaded] = useState(false)
       isFirebaseUpdate.current = false
       return
     }
-    set(dbRef(db, 'tasks'), tasks)
+    set(dbRef(db, 'tasks'), tasks).catch(err => console.error('Failed to sync tasks:', err))
   }, [tasks, tasksLoaded])
 
   // Initialize open/closed state for month groups once tasks load
@@ -298,7 +298,7 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
       isFirebasePhotoUpdate.current = false
       return
     }
-    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder })
+    set(dbRef(db, 'photos'), { propertyPhotos, inspirationPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder }).catch(err => console.error('Failed to sync photos:', err))
   }, [propertyPhotos, inspirationPhotos, customPropertySlots, customInspirationSlots, propertyOrder, inspirationOrder, photosLoaded])
 
   // Subscribe to shared scratchpad
@@ -323,7 +323,7 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
       set(dbRef(db, 'scratchpad'), value).then(() => {
         setScratchpadSaved(true)
         setTimeout(() => setScratchpadSaved(false), 2500)
-      })
+      }).catch(err => console.error('Failed to sync scratchpad:', err))
     }, 800)
   }
 
@@ -369,7 +369,7 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
       const next = { ...prev, [id]: caption }
       if (captionWriteTimerRef.current) clearTimeout(captionWriteTimerRef.current)
       captionWriteTimerRef.current = setTimeout(() => {
-        set(dbRef(db, 'inspirationCaptions'), next)
+        set(dbRef(db, 'inspirationCaptions'), next).catch(err => console.error('Failed to sync captions:', err))
       }, 800)
       return next
     })
