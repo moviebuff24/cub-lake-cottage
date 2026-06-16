@@ -109,34 +109,35 @@ function BoardTile({ board, onDelete }: { board: VisionBoard; onDelete: (id: str
 
   // Takes url directly so both the button click and onPaste can call it
   // without depending on linkInput state (which lags one render on paste)
+  //
+  // No server to call (static export, GitHub Pages) — title/description come
+  // from r.jina.ai's free reader API (CORS-enabled, no key needed), and the
+  // thumbnail is a live screenshot from WordPress's mshots service rather than
+  // a scraped og:image, since mshots needs no fetch/CORS handling at all.
   const doAddLink = async (url: string) => {
     const trimmed = url.trim()
     if (!trimmed) return
     setLinkInput('')
     setLinkLoading(true)
+    let hostname = trimmed
+    try { hostname = new URL(trimmed).hostname } catch {}
+    const thumbnail = `https://s0.wp.com/mshots/v1/${encodeURIComponent(trimmed)}?w=400`
+    const linkId = `link_${Date.now()}`
     try {
-      const res = await fetch('/api/link-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmed }),
+      const res = await fetch(`https://r.jina.ai/${trimmed}`, {
+        headers: { Accept: 'application/json' },
       })
-      const preview = await res.json()
-      const linkId = `link_${Date.now()}`
-      let hostname = trimmed
-      try { hostname = new URL(trimmed).hostname } catch {}
+      const json = await res.json()
       await set(dbRef(db, `visionBoards/${board.id}/links/${linkId}`), {
         id: linkId,
         url: trimmed,
-        title: preview.title || hostname,
-        description: preview.description || '',
-        thumbnail: preview.thumbnail || '',
+        title: json.data?.title || hostname,
+        description: json.data?.description || '',
+        thumbnail,
       })
     } catch {
-      const linkId = `link_${Date.now()}`
-      let hostname = trimmed
-      try { hostname = new URL(trimmed).hostname } catch {}
       await set(dbRef(db, `visionBoards/${board.id}/links/${linkId}`), {
-        id: linkId, url: trimmed, title: hostname, description: '', thumbnail: '',
+        id: linkId, url: trimmed, title: hostname, description: '', thumbnail,
       })
     }
     setLinkLoading(false)
