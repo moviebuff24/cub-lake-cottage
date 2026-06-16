@@ -244,7 +244,13 @@ const [photosLoaded, setPhotosLoaded] = useState(false)
       isFirebaseUpdate.current = false
       return
     }
-    set(dbRef(db, 'tasks'), tasks).catch(err => console.error('Failed to sync tasks:', err))
+    // Firebase set() throws synchronously (not a rejected promise) if any nested
+    // value is undefined — JSON round-trip strips those keys before writing.
+    try {
+      set(dbRef(db, 'tasks'), JSON.parse(JSON.stringify(tasks))).catch(err => console.error('Failed to sync tasks:', err))
+    } catch (err) {
+      console.error('Failed to sync tasks:', err)
+    }
   }, [tasks, tasksLoaded])
 
   // Initialize open/closed state for month groups once tasks load
