@@ -32,6 +32,8 @@ import {
   MessageSquare,
   GripVertical,
   Menu,
+  Trash2,
+  RefreshCw,
 } from 'lucide-react'
 import { type Task, initialTasks, MONTHS_ORDER } from '@/lib/tasks'
 import { LakeReport } from '@/components/lake-report'
@@ -118,6 +120,7 @@ const [photosLoaded, setPhotosLoaded] = useState(false)
   const propertyInputRef = useRef<HTMLInputElement>(null)
   const inspirationInputRef = useRef<HTMLInputElement>(null)
   const [activeUploadTarget, setActiveUploadTarget] = useState<{ type: 'property' | 'inspiration'; id?: string } | null>(null)
+  const [lightboxPhoto, setLightboxPhoto] = useState<{ type: 'property' | 'inspiration'; id: string; label: string; isCustom: boolean } | null>(null)
 
   // Computed values
   const completedCount = tasks.filter(t => t.completed).length
@@ -792,7 +795,7 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
                     return (
                       <SortablePhotoTile key={cat.id} id={cat.id}>
                         <button
-                          onClick={() => triggerUpload('property', cat.id)}
+                          onClick={() => photo ? setLightboxPhoto({ type: 'property', id: cat.id, label: cat.label, isCustom }) : triggerUpload('property', cat.id)}
                           className="group relative aspect-square w-full rounded-2xl bg-card border border-border overflow-hidden hover:border-primary/50 transition-all hover:shadow-xl hover:-translate-y-1"
                           onMouseEnter={() => setHoveredCategory(cat.id)}
                           onMouseLeave={() => setHoveredCategory(null)}
@@ -801,7 +804,7 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
                             <>
                               <img src={photo.url} alt={cat.label} className="absolute inset-0 w-full h-full object-cover" />
                               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="text-white text-sm font-medium">Change photo</span>
+                                <span className="text-white text-sm font-medium">View photo</span>
                               </div>
                               <button
                                 onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('property', cat.id) : removePhoto('property', cat.id) }}
@@ -892,7 +895,7 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
                       <SortablePhotoTile key={item.id} id={item.id}>
                         <div>
                           <button
-                            onClick={() => triggerUpload('inspiration', item.id)}
+                            onClick={() => photo ? setLightboxPhoto({ type: 'inspiration', id: item.id, label: item.label, isCustom }) : triggerUpload('inspiration', item.id)}
                             className="group relative aspect-[4/3] w-full rounded-2xl overflow-hidden border-2 transition-all hover:shadow-xl hover:-translate-y-1"
                             style={{ backgroundColor: photo ? undefined : colors.bg, borderColor: colors.border }}
                           >
@@ -900,7 +903,7 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
                               <>
                                 <img src={photo.url} alt={item.label} className="absolute inset-0 w-full h-full object-cover" />
                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <span className="text-white text-sm font-medium">Change photo</span>
+                                  <span className="text-white text-sm font-medium">View photo</span>
                                 </div>
                                 <button
                                   onClick={(e) => { e.stopPropagation(); isCustom ? removeCustomSlot('inspiration', item.id) : removePhoto('inspiration', item.id) }}
@@ -1303,6 +1306,58 @@ setCustomPropertySlots(data.customPropertySlots ? Object.values(data.customPrope
                 style={{ backgroundColor: '#3d5a3c' }}
               >
                 Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo Lightbox Modal */}
+      {lightboxPhoto && (
+        <div
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+          onClick={() => setLightboxPhoto(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={lightboxPhoto.label}
+            className="relative max-w-4xl max-h-full w-full flex flex-col items-center"
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => e.key === 'Escape' && setLightboxPhoto(null)}
+          >
+            <button
+              onClick={() => setLightboxPhoto(null)}
+              className="absolute -top-12 right-0 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={(lightboxPhoto.type === 'property' ? propertyPhotos : inspirationPhotos)[lightboxPhoto.id]?.url}
+              alt={lightboxPhoto.label}
+              className="max-w-full max-h-[75vh] rounded-xl object-contain shadow-2xl"
+            />
+            <div className="flex items-center gap-3 mt-5">
+              <span className="text-white/80 text-sm font-medium mr-2">{lightboxPhoto.label}</span>
+              <button
+                onClick={() => {
+                  const { type, id } = lightboxPhoto
+                  setLightboxPhoto(null)
+                  triggerUpload(type, id)
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-white/10 hover:bg-white/20 transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" /> Replace
+              </button>
+              <button
+                onClick={() => {
+                  const { type, id, isCustom } = lightboxPhoto
+                  isCustom ? removeCustomSlot(type, id) : removePhoto(type, id)
+                  setLightboxPhoto(null)
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-destructive/80 hover:bg-destructive transition-colors"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
               </button>
             </div>
           </div>
